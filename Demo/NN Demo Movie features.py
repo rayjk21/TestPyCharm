@@ -1,28 +1,23 @@
-# You have to set the working directory, when working on a file that is in a sub-directory
-import os
-os.getcwd()
-os.chdir(r"C:\\VS Projects\\Numerics\\Numerics\\Temp.Python\\")
-
 import numpy as np
 import pandas as pa
 import seaborn as sns
-import keras as keras
 import sklearn
 from gensim.models import Word2Vec
 from sklearn.decomposition import PCA
 import matplotlib 
 from matplotlib import pyplot as plt
-import MyUtils.utils_explore as MyExp
-import MyUtils.utils_prep as MyPrep
-import MyUtils.utils_plot as MyPlot
-import MyUtils.utils_models as MyMod
-
 import pydot
 import graphviz
 import itertools
 import more_itertools
-
+import MyUtils.utils_explore as MyExp
+import MyUtils.utils_prep as MyPrep
+import MyUtils.utils_plot as MyPlot
+import MyUtils.utils_models as MyMod
 import MyUtils.Embeddings as Emb
+import tensorflow
+import keras as keras
+
 
 pa.set_option('max_rows', 11)
 pa.set_option('expand_frame_repr', False)
@@ -149,6 +144,7 @@ def genrePlot(genre, dims=["F1", "F2"], highlight=None):
     if highlight != None: plotTitle(highlight, dims)
     plt.show()
 
+
 genrePlot("Comedy", f12, highlight="Dumb & Dumber")
 genrePlot("Comedy", f34, highlight="Dumb & Dumber")
 
@@ -188,8 +184,12 @@ flags = GetFlagsOver(mRaw, fTitle, over=3.5)
 # Add flag to the full ratings dataframe - drop if have not rated the film
 flagged = pa.merge(mRaw, flags, on='Member ID', how='left').dropna()
 
+
 # Members have 1 if like, 0 if dislike
+print(flags)
+print(flagged.loc[flagged["Member ID"]==152])
 print(flagged["Flag"].value_counts())
+
 
 
 
@@ -202,10 +202,16 @@ input["Member Ix"] = input["Member ID"]
 input = input.set_index("Member Ix")
 input = input.sort_values(["Member ID"])
 
+
 # Preview counts
 input["Flag"].value_counts()
 input["Rating"].value_counts()
+print(input.loc[input["Member ID"]==152])
 MyExp.detail(input)
+
+
+
+
 
 # Identify some members with 10-50 Titles who like/dislike 
 def uniqueMembers(df, minR=10, maxR=50):
@@ -326,7 +332,6 @@ def plotCompare(dfX, nGrid=3, flag0=flag0, flag1=flag1):
             p=p+1
     plt.show()
 
-
 # Plot individual member who does or doesn't like the film
 def plot1(mId, dfX, df=input, dims=["F3", "F4"], lbl="Title", highlight=None):
     """
@@ -353,7 +358,6 @@ def plot1(mId, dfX, df=input, dims=["F3", "F4"], lbl="Title", highlight=None):
 
     plt.suptitle(title)
     plt.show()
-    return data
 
 def reshapeAndSplitData(dfX, dfY, shape='1D', nBins=4, yCat = True):
     """
@@ -454,14 +458,15 @@ def confusion(model, X_test, y_test, yCat=True, show=True, mType=""):
 
 
 
-#### Look at 2 customers
-d0 = plot1(flag0[0], dfX, highlight=fTitle)
-d1 = plot1(flag1[1], dfX, highlight=fTitle)
+
 
 
 ############### MLP #################
 n = 4
 dfX, dfY = preProcessData(df=input, nBins=n)
+# Look at 2 customers
+d0 = plot1(flag0[0], dfX, highlight=fTitle)
+d1 = plot1(flag1[1], dfX, highlight=fTitle)
 plotCompare(dfX, 3)
 X_train1, X_valid1, X_test1, y_train1, y_valid1, y_test1 = reshapeAndSplitData(dfX, dfY, '1D', nBins=n)
 model1 = modelMlp(nBins=n)
