@@ -60,15 +60,20 @@ class Embeddings():
         return pa.merge(self.df, wanted , how='inner', on=itemLbl)
 
 
-    def plotGroup(self, gpLbl, wantGp, dims=["F1", "F2"]):
+    def plotGroups(self, gpLbl, wantGps, dims=["F1", "F2"], highlight = None,  show=True):
         itemLbl = self.itemLbl
-        plotData = self.getGroupData(gpLbl, [wantGp])
-        MyPlot.scatterDf(plotData, dims, itemLbl)
-        plt.show()
+        plotData = self.getGroupData(gpLbl, wantGps)
+        MyPlot.scatterDf(plotData, dims, itemLbl, color='Blue')
+        if highlight is not None:
+            MyPlot.scatterDf(self.df.loc[highlight], dims, color='Red')
+        if show: plt.show()
         return plotData
 
 
-    def plotGroups(self, gpLbl, wantGps):
+    def plotGroup(self, gpLbl, wantGp, dims=["F1", "F2"], highlight=None, show=True):
+        self.plotGroups(gpLbl, [wantGp], dims, highlight, show)
+
+    def pairGroups(self, gpLbl, wantGps):
         plotData = self.getGroupData(gpLbl, wantGps)
         sns.pairplot(plotData, hue=gpLbl)
         plt.show()

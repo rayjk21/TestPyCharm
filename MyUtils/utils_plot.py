@@ -70,7 +70,7 @@ def plotPoint(x,y,color='Red'):
     plt.scatter(x, y, color=color)
 
 
-def plot_scatter(points, labels, xyLbls = ["X","Y"] ,color='Blue', size=20, cmap=None, fSize=10):
+def plot_scatter(points, labels, xyLbls = ["X","Y"] ,color='Blue', size=20, cmap=None, fSize=10, hideAxes=False, show_axisLbls=True, xRange=None, yRange=None):
     """
         colour can be an array of values in which case the colour map is used
         Otherwise the fixed colour is used
@@ -82,17 +82,30 @@ def plot_scatter(points, labels, xyLbls = ["X","Y"] ,color='Blue', size=20, cmap
     for i, word in enumerate(labels): 
         plt.annotate(word, xy=(points[i, 0], points[i, 1]), size=fSize)
 
-    plt.xlabel(xyLbls[0])
-    plt.ylabel(xyLbls[1])
+    if (not hideAxes):
+        plt.xlabel(xyLbls[0])
+        plt.ylabel(xyLbls[1])
 
 
-def scatterDf(df, xyCols, lblCol=None, color='Blue', size=20, cmap=None, fSize=10):
+    # Turn off tick labels
+    ax = plt.gca()
+    if ((not show_axisLbls) | hideAxes):
+        ax.set_yticklabels([])
+        ax.set_xticklabels([])
+
+    if (xRange is not None):
+        ax.set_xlim(xRange[0], xRange[1])
+    if (yRange is not None):
+        ax.set_ylim(yRange[0], yRange[1])
+
+
+def scatterDf(df, xyCols, lblCol=None, color='Blue', size=20, cmap=None, fSize=10, hideAxes=False, xRange=None, yRange=None):
     if lblCol==None : lbls=[]
     else: lbls=list(df[lblCol])
-    plot_scatter(df[xyCols].values, lbls, xyCols, color=color, size=size,cmap=cmap, fSize=fSize)
+    plot_scatter(df[xyCols].values, lbls, xyCols, color=color, size=size,cmap=cmap, fSize=fSize, hideAxes=hideAxes, xRange=xRange, yRange=yRange)
 
 
-def heatMap(df, xCol="X", yCol="Y", show_legend=True, show_axisName = True, show_axisLbls = True, cmap=None, show=True, diverge=False):
+def heatMap(df, xCol="X", yCol="Y", show_legend=True, hideAxes=False, show_axisName = True, show_axisLbls = True, cmap=None, show=True, diverge=False):
     ras = df.as_matrix()
     min = np.min(ras)
     max = np.max(ras)
@@ -117,29 +130,30 @@ def heatMap(df, xCol="X", yCol="Y", show_legend=True, show_axisName = True, show
  #   plt.xlabel(xCol)
  #   plt.ylabel(yCol)
 
-    if show_axisName:
+    if (show_axisName & (not hideAxes)):
         ax.set_ylabel(yCol)
         ax.set_xlabel(xCol)
 
     # Turn off tick labels
-    if not(show_axisLbls):
+    if ((not show_axisLbls) | hideAxes):
         ax.set_yticklabels([])
         ax.set_xticklabels([])
 
     if show: plt.show()
 
 
-def heatPlotDf(df,xyCols,xBins=10,yBins=10, labels=False, show=True):
+def heatPlotDf(df,xyCols,xBins=10,yBins=10, trueLabels=False, hideAxes=False, show=True):
     cmap = sns.cubehelix_palette(light=1, as_cmap=True)
     xLabels, yLabels = None, None
-    if (not labels):
+
+    if (not trueLabels):
         xLabels = range(xBins) 
         yLabels = range(yBins)
     xCol,yCol = xyCols[0], xyCols[1] 
     x=pa.cut(df[xCol], bins=xBins, labels=xLabels)
     y=pa.cut(df[yCol], bins=yBins, labels=yLabels)
     piv = pa.crosstab(y,x)
-    heatMap(piv,xCol,yCol, show=show)
+    heatMap(piv,xCol,yCol, show=show, hideAxes=hideAxes)
 
 
 
