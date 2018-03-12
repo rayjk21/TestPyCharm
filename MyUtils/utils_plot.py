@@ -1,3 +1,4 @@
+
 import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.colors as colors
@@ -5,7 +6,7 @@ import numpy as np
 import pandas as pa
 import seaborn as sns
 import itertools
-
+import math
 
 
 
@@ -106,16 +107,16 @@ def scatterDf(df, xyCols, lblCol=None, color='Blue', size=20, cmap=None, fSize=1
 
 
 def heatMap(df, xCol="X", yCol="Y", show_legend=True, hideAxes=False, show_axisName = True, show_axisLbls = True, cmap=None, show=True, diverge=False):
-    ras = df.as_matrix()
-    min = np.min(ras)
-    max = np.max(ras)
-    if ((min<0) & (max>0)) | diverge :
-        if min==0:min=-0.0001
-        if max==0:max=0.0001
-        norm = MidpointNormalize(midpoint=0,vmin=min, vmax=max)
+    ras = df.as_matrix().astype('float')
+    vmin = np.min(ras)
+    vmax = np.max(ras)
+    if ((vmin<0) & (vmax>0)) | diverge :
+        if vmin==0:vmin=-0.0001
+        if vmax==0:vmax=0.0001
+        norm = MidpointNormalize(midpoint=0,vmin=min, vmax=vmax)
         cmap=matplotlib.cm.RdBu_r 
         #cmap = sns.diverging_palette(240, 10, n=9)
-        clim=(min, max)
+        clim=(vmin, vmax)
     else:
         cmap = sns.cubehelix_palette(light=1, as_cmap=True)
         norm = None
@@ -186,3 +187,25 @@ def heatPlot2Df(df1, df2, xyCols, xBins=10,yBins=10, labels=False):
     plt.ylabel(yCol)
 
 
+
+def display_images(images):
+    # Calc size of grid
+    n = int (math.sqrt(len(images)))
+    img_width, img_height, _ = images[0].shape
+    # build a black picture with enough space for
+    # our 8 x 8 filters of size 128 x 128, with a 5px margin in between
+    margin = 5
+    width = n * img_width + (n - 1) * margin
+    height = n * img_height + (n - 1) * margin
+    stitched = np.zeros((width, height, 3))
+
+    # fill the picture with our saved filters
+    for i in range(n):
+        for j in range(n):
+            img = images[i * n + j]
+            stitched[(img_width + margin) * i: (img_width + margin) * i + img_width,
+                     (img_height + margin) * j: (img_height + margin) * j + img_height, :] = img
+
+    plt.imshow(stitched)
+    # save the result to disk
+    #imsave('stitched_filters_%dx%d.png' % (n, n), stitched_filters)

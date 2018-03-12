@@ -13,7 +13,7 @@ import more_itertools
 import MyUtils.utils_explore as MyExp
 import MyUtils.utils_prep as MyPrep
 import MyUtils.utils_plot as MyPlot
-import MyUtils.utils_models as MyMod
+import MyUtils.utils_nn as MyMod
 import MyUtils.Embeddings as Emb
 import tensorflow
 import keras as keras
@@ -34,7 +34,7 @@ MyExp.detail(hRaw)
 destEmb = Emb.CreateFromDf(hRaw,'Person URN', "Destination")
 destEmb.plotAll()
 
-
+destEmb.df
 
 
 
@@ -251,7 +251,8 @@ def preProcessData(df, nBins=4, type='Norm', dims=["F3", "F4"]):
         xCol, yCol = dims
         labels = False
         """
-    
+        xCol, yCol = dims
+
         xCuts=pa.cut(df[xCol], bins=nBins, retbins=True)[1]
         yCuts=pa.cut(df[yCol], bins=nBins, retbins=True)[1]
 
@@ -405,6 +406,8 @@ def buildModel(model, X_train, X_valid, y_train, y_valid, yCat=True, epochs=20):
     if yCat:  loss=keras.losses.categorical_crossentropy
     else:     loss=keras.losses.binary_crossentropy
 
+    print("Input shape: {}".format(X_train.shape))
+
     model.compile(loss=loss,
                   optimizer=opt,
                   metrics=['accuracy'])
@@ -474,8 +477,9 @@ model2 = modelCnn(nBins=n)
 buildModel(model2, X_train2, X_valid2, y_train2, y_valid2)
 confusion(model2, X_test2, y_test2, mType="CNN")
 
+
 ############### Logistic Regression #################
-n = 4
+n = 10
 dfX, dfY = preProcessData(df=input, nBins=n)
 plotCompare(dfX, 3)
 X_train3, X_valid3, X_test3, y_train3, y_valid3, y_test3 = reshapeAndSplitData(dfX, dfY, '1D', nBins=n, yCat=False)
@@ -483,12 +487,4 @@ model3 = modelLR(nBins=n)
 buildModel(model3, X_train3, X_valid3, y_train3, y_valid3, yCat=False)
 confusion(model3, X_test3, y_test3, yCat=False, mType="Logistic Regression")
 
-
-sklearn.metrics.accuracy_score(y_test, y_pred)      # (TP + TN) / Total
-sklearn.metrics.recall_score(y_test, y_pred)        # TP / (TP + FN)
-sklearn.metrics.precision_score(y_test, y_pred)     # TP / (TP + FP)
-
-
-from keras.utils import plot_model
-plot_model(model1, to_file='C:Temp//model1.png')
 

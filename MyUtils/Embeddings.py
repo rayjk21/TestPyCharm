@@ -16,7 +16,7 @@ def CreateFromArrays(arrays, ofVar = "Item"):
     return Embeddings(model, ofVar)
 
 def CreateFromDf(df, byVar, ofVar): 
-    cols = df.filter([byVar, ofVar])
+    cols = df[[byVar, ofVar]]
     gps = MyPrep.groupArrays(cols, byVar, ofVar)
     arrays = gps[ofVar].values
     return CreateFromArrays(arrays, ofVar)
