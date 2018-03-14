@@ -1,9 +1,12 @@
 
 
 import matplotlib.pyplot as plt
+import MyUtils.utils_plot as myPlot
+
+
+
 
 # For each unique value of waiting_time, plot the % of 'show_up'
-
 from collections import Counter
 plt.figure(figsize=(18, 10))
 
@@ -206,3 +209,34 @@ def plotCompare(dfX, nGrid=3, flag0=flag0, flag1=flag1):
             MyPlot.heatMap(dfX.loc[flag1[p]], show_legend=False, show_axisName = False, show_axisLbls = False, show=False, diverge=True)
             p=p+1
     plt.show()
+
+
+
+
+
+
+############## Compare Histograms
+import random
+import numpy
+from matplotlib import pyplot
+
+x = [random.gauss(3,1) for _ in range(400)]
+y = [random.gauss(4,2) for _ in range(400)]
+
+bins = numpy.linspace(-10, 10, 100)
+
+pyplot.hist(x, bins, alpha=0.5, label='x')
+pyplot.hist(y, bins, alpha=0.5, label='y')
+pyplot.legend(loc='upper right')
+pyplot.show()
+
+
+
+#### Colour from 0 to 1
+# Use the HSL color space to get the correct value. Define the correct color with the Hue, for blue take for example the vale '0.6'.
+# The Saturation can be the max value of 1, and take your number to control the Lightness. 0 means black, 0.5 is the color, and 1 is white.
+# So we only use the range of 0.5 to 1. After you have define your correct HSL color, convert it to the RGB color space. Putting it all togehter
+
+
+import colorsys
+colorsys.hls_to_rgb(0.6, 1, YOURNUMBER * 0.5 + 0.5)

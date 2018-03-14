@@ -7,6 +7,14 @@ import pandas as pa
 import seaborn as sns
 import itertools
 import math
+import MyUtils.my_stats as myStats
+from scipy import stats
+
+import colorsys
+import seaborn as sns
+import matplotlib
+
+
 
 
 
@@ -26,6 +34,101 @@ class MidpointNormalize(colors.Normalize):
 		# simple example...
 		x, y = [self.vmin, self.midpoint, self.vmax], [0, 0.5, 1]
 		return np.ma.masked_array(np.interp(value, x, y), np.isnan(value))                                  
+
+
+def setBins(nBins, xBins=None, yBins=None):
+    if xBins is None: xBins = nBins
+    if yBins is None: yBins = nBins
+    return xBins, yBins
+
+
+def make2D(img):
+    v = img.reshape(1,-1)
+    n = v.shape[1]
+    nBins = int(math.sqrt(n))
+    if (nBins * nBins != n):
+        v = v[0,0:(nBins*nBins)]
+        print("Cropping shape {} to {}x{}".format(img.shape, nBins, nBins))
+    return v.reshape(nBins,nBins)
+
+
+def __test():
+    img = np.array([1,2,3,4,5])
+    make2D(img)
+    img = np.array([[1, 2], [3, 4]])
+
+
+def PlotImagePairs(orig, decoded, nBins=None, xBins=None, yBins=None, n=10):
+    xBins, yBins = setBins(nBins, xBins, yBins)
+    def getShape(img):
+        if (yBins is None):
+            return make2D(img)
+        else:
+            return img.reshape(yBins, xBins)
+
+    plt.figure(figsize=(20, 4))
+    for i in range(n):
+        # display original
+        ax = plt.subplot(2, n, i + 1)
+
+        plt.imshow(getShape(orig[i]))
+        plt.gray()
+        ax.get_xaxis().set_visible(False)
+        ax.get_yaxis().set_visible(False)
+
+        # display reconstruction
+        ax = plt.subplot(2, n, i + 1 + n)
+        plt.imshow(getShape(decoded[i]))
+        plt.gray()
+        ax.get_xaxis().set_visible(False)
+        ax.get_yaxis().set_visible(False)
+    plt.show()
+
+
+
+
+
+def display_images(images, reshape=None, margin = 5):
+    # Calc size of grid
+    nImages = len(images)
+    n = math.ceil(math.sqrt(nImages))
+    if reshape:
+        img_width, img_height            = reshape[0:2]
+        nChannels = 1
+    else:
+        img_width, img_height, nChannels = images[0].shape
+
+    # build a black picture with enough space for
+    # our 8 x 8 filters of size 128 x 128, with a 5px margin in between
+    width = n * img_width + (n - 1) * margin
+    height = n * img_height + (n - 1) * margin
+    stitched = np.zeros((width, height, nChannels))
+
+    # fill the picture with our saved filters
+    for i in range(n):
+        for j in range(n):
+            ix = i * n + j
+            if (ix>=nImages): break
+            if reshape is None:
+                img = images[ix]
+            else:
+                img = images[ix].reshape(img_width, img_height, nChannels)
+
+            stitched[(img_width + margin) * i: (img_width + margin) * i + img_width,
+                     (img_height + margin) * j: (img_height + margin) * j + img_height, :] = img
+
+
+    if nChannels==1:
+        stitched = stitched.reshape(width,height)
+    print("Image of shape {}".format(stitched.shape))
+    plt.imshow(stitched)
+    return stitched
+    # save the result to disk
+    #imsave('stitched_filters_%dx%d.png' % (n, n), stitched_filters)
+
+
+
+
 
 
 
@@ -71,6 +174,20 @@ def plotPoint(x,y,color='Red'):
     plt.scatter(x, y, color=color)
 
 
+
+
+def showHideAxes(plt, hide=False):
+    if (hide):
+        plt.xlabel("")
+        plt.ylabel("")
+
+    # Turn off tick labels
+    ax = plt.gca()
+    if (hide):
+        ax.set_yticklabels([])
+        ax.set_xticklabels([])
+
+
 def plot_scatter(points, labels, xyLbls = ["X","Y"] ,color='Blue', size=20, cmap=None, fSize=10, hideAxes=False, show_axisLbls=True, xRange=None, yRange=None):
     """
         colour can be an array of values in which case the colour map is used
@@ -106,8 +223,9 @@ def scatterDf(df, xyCols, lblCol=None, color='Blue', size=20, cmap=None, fSize=1
     plot_scatter(df[xyCols].values, lbls, xyCols, color=color, size=size,cmap=cmap, fSize=fSize, hideAxes=hideAxes, xRange=xRange, yRange=yRange)
 
 
-def heatMap(df, xCol="X", yCol="Y", show_legend=True, hideAxes=False, show_axisName = True, show_axisLbls = True, cmap=None, show=True, diverge=False):
-    ras = df.as_matrix().astype('float')
+def heatMap(arr, xCol="X", yCol="Y", show_legend=True, hideAxes=False, show_axisName = True, show_axisLbls = True, cmap=None, show=True, diverge=False):
+    ras =  arr.astype('float')
+    #ras =  df.as_matrix().astype('float')  # Now pass as array
     vmin = np.min(ras)
     vmax = np.max(ras)
     if ((vmin<0) & (vmax>0)) | diverge :
@@ -125,7 +243,6 @@ def heatMap(df, xCol="X", yCol="Y", show_legend=True, hideAxes=False, show_axisN
     ax = plt.imshow(ras, cmap=cmap, clim=clim, norm=norm, origin='lower')
     #ax = sns.heatmap(df, cmap=cmap, cbar=show_legend)
     #ax.invert_yaxis()
-
 
     ax = plt.gca()
  #   plt.xlabel(xCol)
@@ -188,24 +305,78 @@ def heatPlot2Df(df1, df2, xyCols, xBins=10,yBins=10, labels=False):
 
 
 
-def display_images(images):
-    # Calc size of grid
-    n = int (math.sqrt(len(images)))
-    img_width, img_height, _ = images[0].shape
-    # build a black picture with enough space for
-    # our 8 x 8 filters of size 128 x 128, with a 5px margin in between
-    margin = 5
-    width = n * img_width + (n - 1) * margin
-    height = n * img_height + (n - 1) * margin
-    stitched = np.zeros((width, height, 3))
+def compareDistribution(xSeries, catSeries, ignoreValue = None, title="", showAxes=True, showLegend=True, show=True, cmap=None, nBins=10):
+    '''
+        Creates single plot, for the xSeries, showing distributioins for each category in the catSeries
+    :param xSeries:
+    :param catSeries:
+    :param ignoreValue:
+    :param title:
+    :param showAxes:
+    :param showLegend:
+    :param show:
+    :param cmap:
+    :return:
+    '''
+    xmin = np.nanmin(xSeries)
+    xmax = np.nanmax(xSeries)
+    bins = np.linspace(xmin,xmax, nBins)
+    keep = lambda x: x != ignoreValue
+    keepV = np.vectorize(keep)
+    s01 = None
+    xData = []
+    if (cmap is None): cmap = matplotlib.cm.get_cmap('Greys')
 
-    # fill the picture with our saved filters
-    for i in range(n):
-        for j in range(n):
-            img = images[i * n + j]
-            stitched[(img_width + margin) * i: (img_width + margin) * i + img_width,
-                     (img_height + margin) * j: (img_height + margin) * j + img_height, :] = img
+    def get_x(cat):
+        catIx = catSeries[catSeries==cat].dropna().index
+        xs = xSeries[catIx].dropna()
+        return xs[keepV(xs)]
 
-    plt.imshow(stitched)
-    # save the result to disk
-    #imsave('stitched_filters_%dx%d.png' % (n, n), stitched_filters)
+    cats = list(catSeries.drop_duplicates().values)
+
+    for cat in cats:
+        x = get_x(cat)
+        plt.hist(x, bins, alpha=0.5, label=str(cat), normed=True)
+        xData.append(x)
+
+    if len(cats)==2:
+        x0, x1 = (xData[0], xData[1])
+        np.mean(x0)
+        np.mean(x1)
+        p = stats.ttest_ind(x0, x1).pvalue
+        s01 = myStats.getSig01(p)
+        if s01:
+            colour = cmap(s01/2)
+            ax = plt.gca()
+            ax.set_facecolor(colour)
+
+    showHideAxes(plt, hide = ~showAxes)
+
+    if showLegend: plt.legend(loc='upper right')
+    if s01: title = "{}:: {:0.2f}".format(title, s01)
+    if not(title==""): plt.title(title, fontsize = 8)
+    if show: plt.show()
+
+
+def compareDistributions(dfX, dfY, ignore=None, showLegend=False, showAxes=False, nBins=10):
+    '''
+    Creates tiled plot, one plot for each value, showing distributioins for each category
+
+
+    :param dfX: Each column contains a distribution to be plotted
+    :param dfY: Single column where each value indicates the category of that row
+    :param ignore:
+    :return:
+    '''
+    catSeries = dfY.iloc[:, 0]
+    xIxs = len(dfX.columns)
+    sq = math.ceil(math.sqrt(xIxs))
+    xIx = 0
+    for xIx in range(xIxs):
+        plt.subplot(sq, sq, xIx+1)
+        xSeries = dfX.iloc[:,xIx]
+        xLbl = dfX.columns.ravel()[xIx]
+        compareDistribution(xSeries, catSeries, ignoreValue = ignore, title=xLbl, showAxes=showAxes, showLegend=showLegend, show=False)
+    plt.suptitle(str(list(dfX.columns.names)))
+    plt.show()
+

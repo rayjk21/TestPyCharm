@@ -25,7 +25,7 @@ def setBins(nBins, xBins=None, yBins=None):
     if yBins is None: yBins = nBins
     return xBins, yBins
 
-def reshapeAndSplitData(dfX, dfY, shape='1D', nBins=4, xBins=None, yBins=None, yCat = True):
+def reshapeAndSplitData(dfX, dfY, reshape=None, yCat = True, printing=False):
     '''
         Reshapes the data and split into train/valid/test as 60:20:20
     :param dfX:
@@ -39,43 +39,47 @@ def reshapeAndSplitData(dfX, dfY, shape='1D', nBins=4, xBins=None, yBins=None, y
     :return:
     '''
 
-    xBins, yBins = setBins(nBins, xBins, yBins)
-    print("X shape: {} = {}x{}".format(dfX.shape, (dfX.shape[0])/yBins, xBins))
-    print("Y shape: {}".format(dfY.shape))
-    print()
-    print("dfX : {}".format(dfX.columns))
-    print()
-    print("dfY")
-    myExp.overview(dfY)
-    myExp.detail(dfY)
+    if printing:
+        print("X shape: {}".format(dfX.shape))
+        print("Y shape: {}".format(dfY.shape))
+        print()
+        print("dfX : {}".format(dfX.columns))
+        print()
+        print("dfY")
+        myExp.overview(dfY)
+        myExp.detail(dfY)
 
     y = dfY.as_matrix()
     nMemb = y.shape[0]
     y = y.reshape(nMemb,1)
 
     # Flatten to one row per person
-    X = dfX.as_matrix().reshape(nMemb, xBins * yBins)
+    X = dfX.as_matrix().reshape(nMemb, -1)
 
     # Balance yes/no samples
     sm = SMOTE(random_state=101)
     X, y = sm.fit_sample(X, y)
-    print("Over Sampled to give: {}".format(np.unique(y, return_counts=True)))
 
-    if shape == '2D':
+    if printing:
+        print("Over Sampled to give: {}".format(np.unique(y, return_counts=True)))
+
+    if len(reshape) == 2:
         n = X.shape[0]
-        X = X.reshape(n, yBins, xBins, 1)
+        X = X.reshape(n, reshape[0], reshape[1], 1)
+
+    print("Reshaped X to {}".format(X.shape))
 
     X_train, X_, y_train, y_         = train_test_split(X, y,   test_size=0.4, random_state=101)
     X_valid, X_test, y_valid, y_test = train_test_split(X_, y_, test_size=0.5, random_state=101)
 
     if yCat:
+        print("Converting Y to categorical")
         y_test  = keras.utils.to_categorical(y_test, 2)
         y_valid = keras.utils.to_categorical(y_valid, 2)
         y_train = keras.utils.to_categorical(y_train, 2)
 
+
     return X_train, X_valid, X_test, y_train, y_valid, y_test
-
-
 
 def confusion(model, x_test, y_test, show=True, mType="", n_cases=2):
     """
@@ -113,11 +117,9 @@ def confusion(model, x_test, y_test, show=True, mType="", n_cases=2):
         print("Recall    = {:.2%} = {}".format(rec, recLbl))
         print("Precision = {:.2%} = {}".format(pre, preLbl))
     print()
-    myPlot.plot_confusion_matrix(cmNN,cases, show=show, title=mType+" Confusion Matrix")
-
-
-
-
+    if show: myPlot.plot_confusion_matrix(cmNN,cases, show=show, title=mType+" Confusion Matrix")
+    stats = {"Accuracy":acc, "Precision":pre, "Recall":rec, "matrix":cmNN}
+    return stats
 
 def get_layer_dict(model):
     layer_dict = dict([(layer.name, layer) for layer in model.layers[1:]])
@@ -157,12 +159,10 @@ def find_max_input(model, layer_name, units, img_shape = None, show=False, maxTr
 
     # Get input tensor and find its shape (drop first dimension as this relates to the no. of observations)
     input_img = model.input
-    input_shape = input_img.get_shape().as_list()
-    img_height, img_width, n_channels = input_shape[1:]
-    if (img_height is None):
-        # Some models dont have the input set, so rely on shape being passed in
-        img_height, img_width = img_shape
+    if (img_shape is None):
+        input_shape = input_img.get_shape().as_list()[1:]
 
+    print("Creating image with shape".format(img_shape))
     layer = layer_dict[layer_name]
     layer_output = layer.output
     layer_type = type(layer)
@@ -193,7 +193,7 @@ def find_max_input(model, layer_name, units, img_shape = None, show=False, maxTr
         def tryToConverge(n):
             print ("***** Try number {} *****".format(n))
             # we start from a gray image with some random noise
-            input_img_data = np.random.random((1, img_width, img_height, n_channels))
+            input_img_data = np.random.random((1, *input_shape))
             # we run gradient ascent for 20 steps
             for i in range(nIterations):
                 loss_value, grads_value = iterate([input_img_data])
@@ -234,22 +234,3 @@ def find_max_input(model, layer_name, units, img_shape = None, show=False, maxTr
     return images
 
 
-
-def PlotImagePairs(orig, decoded, nBins=10, xBins=None, yBins=None, n = 10):
-    xBins, yBins = setBins(nBins, xBins, yBins)
-    plt.figure(figsize=(20, 4))
-    for i in range(n):
-        # display original
-        ax = plt.subplot(2, n, i + 1)
-        plt.imshow(orig[i].reshape(yBins, xBins))
-        plt.gray()
-        ax.get_xaxis().set_visible(False)
-        ax.get_yaxis().set_visible(False)
-
-        # display reconstruction
-        ax = plt.subplot(2, n, i + 1 + n)
-        plt.imshow(decoded[i].reshape(yBins, xBins))
-        plt.gray()
-        ax.get_xaxis().set_visible(False)
-        ax.get_yaxis().set_visible(False)
-    plt.show()

@@ -336,3 +336,30 @@ s1 = pd.Series([1, 2], index=['A', 'B'], name='s1')
 s2 = pd.Series([3, 4], index=['A', 'B'], name='s2')
 pd.concat([s1, s2], axis=1)
 pd.concat([s1, s2], axis=1).reset_index()
+
+
+
+# Vectorising and Filtering
+def compareDistribution(xSeries, catSeries, ignoreValue = None):
+    xmin = np.nanmin(xSeries)
+    xmax = np.nanmax(xSeries)
+    bins = np.linspace(xmin,xmax, 10)
+    keep = lambda x: x != ignoreValue
+    keepV = np.vectorize(keep)
+
+    def get_x(cat):
+        catIx = catSeries[catSeries==cat].dropna().index
+        xs = xSeries[catIx].dropna()
+        xs[keepV(xs)]
+
+    def plot_cat(cat):
+        x = get_x(cat)
+        plt.hist(x, bins, alpha=0.5, label=str(cat), normed=True)
+
+    cats = list(catSeries.drop_duplicates().values)
+
+    for cat in cats:
+        plot_cat(cat)
+
+    plt.legend(loc='upper right')
+    plt.show()
