@@ -128,9 +128,19 @@ def display_images(images, reshape=None, margin = 5):
 
 
 
+def stacked_bar(df, ax=None):
+    if ax is None:
+        ax = plt.gca()
+    # Cumulate so bars don't hide each other
+    resultsT = df.sort_index(ascending=False).cumsum(axis=0).fillna(0).sort_index().T
+    cmap = sns.color_palette("Set2", len(resultsT.columns))
+    hatches = ['|', '/', '.','','-']
+    for i, c in enumerate(resultsT.columns):
+        hatch = hatches [int(i / 8)]
+        ax.bar(resultsT.index.values, resultsT.iloc[:, i], color=cmap[i], label=str(c), hatch = hatch)
+        #sns.barplot(resultsT.index.values, resultsT.iloc[:, i], color=cmap[i], label=str(c))
 
-
-
+    ax.legend(ncol=1, loc='upper left', bbox_to_anchor=(1, 1))
 
 
 def plot_confusion_matrix(cm, classes,

@@ -25,7 +25,7 @@ def setBins(nBins, xBins=None, yBins=None):
     if yBins is None: yBins = nBins
     return xBins, yBins
 
-def reshapeAndSplitData(dfX, dfY, reshape=None, yCat = True, printing=False):
+def reshapeAndSplitData(X, y, reshape=None, yCat = True, printing=True):
     '''
         Reshapes the data and split into train/valid/test as 60:20:20
     :param dfX:
@@ -69,17 +69,43 @@ def reshapeAndSplitData(dfX, dfY, reshape=None, yCat = True, printing=False):
 
     print("Reshaped X to {}".format(X.shape))
 
+    if yCat:
+        # Just do once for y, instead of after splitting
+        print("Converting Y to categorical")
+        y  = keras.utils.to_categorical(y, 2)
+
     X_train, X_, y_train, y_         = train_test_split(X, y,   test_size=0.4, random_state=101)
     X_valid, X_test, y_valid, y_test = train_test_split(X_, y_, test_size=0.5, random_state=101)
 
-    if yCat:
-        print("Converting Y to categorical")
-        y_test  = keras.utils.to_categorical(y_test, 2)
-        y_valid = keras.utils.to_categorical(y_valid, 2)
-        y_train = keras.utils.to_categorical(y_train, 2)
-
-
     return X_train, X_valid, X_test, y_train, y_valid, y_test
+
+def splitData(X, y, split=[80, 20], printing=True):
+    '''
+    :param X:
+    :param y:
+    :param split:
+    :param printing:
+    :return:
+    '''
+
+    if (len(split)==3):
+        pTrain = split[0] / sum(split)
+        pValid = split[1] / sum(split)
+        pTest  = split[2] / sum(split)
+        pTest_Valid = pTest / (pTest + pValid)
+
+        X_train, X_, y_train, y_         = train_test_split(X, y,   test_size=1-pTrain, random_state=101)
+        X_valid, X_test, y_valid, y_test = train_test_split(X_, y_, test_size=pTest_Valid, random_state=101)
+
+        if printing: print ("Splitting {} Train:Valid:Test giving {}, {}, {}".format(str(split), len(X_train), len(X_valid), len(X_test)))
+        if printing: print ("- returning (X_train,  y_train), (X_valid, y_valid), (X_test,y_test)")
+        return (X_train,  y_train), (X_valid, y_valid), (X_test,y_test)
+    if (len(split) == 2):
+        pTest = split[1] / sum(split)
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=pTest, random_state=101)
+        if printing: print ("Splitting {} Train:Test giving {}, {}".format(str(split), len(X_train), len(X_test)))
+        if printing: print ("- returning (X_train,  y_train), (X_test,y_test)")
+        return (X_train,  y_train), (X_test,y_test)
 
 def confusion(model, x_test, y_test, show=True, mType="", n_cases=2):
     """
@@ -234,3 +260,54 @@ def find_max_input(model, layer_name, units, img_shape = None, show=False, maxTr
     return images
 
 
+
+
+def argmax3d(prob3d):
+    '''
+        Applies argmax of category probabilities in 3D array (n_obs x n_timestamp x n_categories)
+    :param prob3d:
+        Takes array n_obs x n_timestamp x n_categories
+    :return:
+        Returns 2D array (n_obs x n_timestamp) with the max category
+    '''
+
+    # prob3d = np.array([
+    #    [[0.1, 0.2, 0.3], [0.1, 0.2, 0.3], [0.1, 0.2, 0.3], [0.1, 0.2, 0.3]],
+    #    [[0.5, 0.2, 0.3], [0.1, 0.2, 0.13], [0.1, 0.2, 0.3], [0.91, 0.2, 0.3]]
+    # ])
+
+    nobs  = prob3d.shape[0]
+    ntime = prob3d.shape[1]
+    ncats = prob3d.shape[2]
+    prob2d = prob3d.reshape(nobs * ntime, ncats)
+    cats1d = np.argmax(prob2d, 1)
+    cats2d = cats1d.reshape(nobs, ntime)
+    return cats2d
+
+
+class Metrics(keras.callbacks.Callback):
+    def on_epoch_end(self, batch, logs):
+        xV, yV, _ = self.validation_data
+
+        # predict returns a probability
+        prob = np.asarray(self.model.predict(xV))
+
+        if (prob.ndim==2):
+            #print("Treat as binary probabilities")
+            cats  = np.where(prob > 0.5, 1, 0)
+            average = 'binary'
+
+        if (prob.ndim==3):
+            #print("Treat as category probabilities")
+            cats = argmax3d(prob)
+            yV   = argmax3d(yV)
+            # Need to average over the categories
+            average = 'micro'
+
+      # print("Probs: {} {}".format(prob.shape, prob[:4]))
+      # print("Preds: {} {}".format(cats.shape, cats[:4]))
+      # print("Actual: {} {}".format(yV.shape, yV[:4]))
+
+        # Compare as flattened list over all obs and timestamps
+        precision = sklearn.metrics.precision_score(yV.flatten(), cats.flatten(), average=average)
+        logs.update({'MyPrecision':precision})
