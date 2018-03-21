@@ -7,6 +7,7 @@
       <excludeFolder url="file://$MODULE_DIR$/Demo" />
       <excludeFolder url="file://$MODULE_DIR$/Samples" />
       <excludeFolder url="file://$MODULE_DIR$/venv" />
+      <excludeFolder url="file://$MODULE_DIR$/venv35" />
     </content>
     <orderEntry type="jdk" jdkName="Python 3.5 (TestPyCharm)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
