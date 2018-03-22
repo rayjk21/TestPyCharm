@@ -23,6 +23,8 @@ import pandas as pa
 import MyUtils.utils_nn as MyNn
 import MyUtils.utils_plot as MyPlot
 import MyUtils.utils_ui as myUi
+import time
+
 
 
 ## Getting warnings from sklearn doing coder.inverse_transform(2)
@@ -33,7 +35,8 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 
 #data_path = r"C:\Temp\TestPyCharm\Data\Models\002 RNN vowel"
-data_path = r"C:\Users\rkirk\Documents\GIT\Python\TestPyCharm\Data\Models\002 RNN vowel"
+models_path = r"C:\Users\rkirk\Documents\GIT\Python\TestPyCharm\Data\Models\002 RNN vowel"
+data_path = r"C:\Users\rkirk\Documents\GIT\Python\TestPyCharm\Data\Sample Data"
 
 ############# Raw Data #############
 
@@ -88,8 +91,8 @@ def create_encoder(raw_data):
     return coder
 
 
-def get_raw_data(n_chars = 1000):
-    text      = read_file(n=n_chars)
+def get_raw_data(n_chars = 1000, filename=None):
+    text      = read_file(n=n_chars, filename=filename)
     words     = prep_text(text)
     raw_data  = words_to_raw_data(words)
 
@@ -201,6 +204,8 @@ def get_xy_data(raw_data, coder, max_len=10, normalise=True, x_dims=3, y_dims=3,
     X = createX(raw_data, coder, max_len = max_len, normalise=normalise, n_dims=x_dims)
     y = createY(raw_data, max_len = max_len, n_dims=y_dims, flags=flags)
 
+    print("X shape: {}".format(X.shape))
+    print("y shape: {}".format(y.shape))
 
     return X,y
 
@@ -302,12 +307,28 @@ def create_model_E(hidden_units, num_flags, model_name="ModelE"):
     return model
 
 
+def create_model_F(hidden_units, num_flags, embedding_size, time_steps=1, batch_size=1, mask_zero=True, model_name="ModelF"):
+    model = Sequential(name=model_name)
+    model.add(Embedding(input_dim=num_flags+1,
+                        input_length=time_steps,
+                        batch_input_shape=(batch_size, time_steps),
+                        output_dim=embedding_size,
+                        mask_zero=mask_zero))
+    model.add(LSTM(hidden_units,
+                   batch_input_shape=(batch_size, time_steps, embedding_size),
+                   return_sequences=False, stateful=True))
+    model.add(Dense(num_flags+1, activation = "softmax"))
+    model.compile(loss=keras.losses.categorical_crossentropy, optimizer='adam', metrics=['accuracy'])
+    print(model.summary())
+    return model
+
+
 
 
 #################  Process models
 
 def model_load(model_name):
-    filepath = "{}\\{}.hdf5".format(data_path, model_name)
+    filepath = "{}\\{}.hdf5".format(models_path, model_name)
     print("Loading model from {}".format(filepath))
     model = load_model(filepath)
     # Name doesn't get saved
@@ -316,12 +337,12 @@ def model_load(model_name):
     return model
 
 
-def model_save(model, data_path, model_name, sfx, echo=False, temp=True):
+def model_save(model, model_path, model_name, sfx, echo=False, temp=True):
     if temp==True:
         temp_path="\\temp"
     else:
         temp_path=""
-    filename = "{}{}\\model_{}_{}.hdf5".format(data_path, temp_path, model_name, sfx)
+    filename = "{}{}\\model_{}_{}.hdf5".format(model_path, temp_path, model_name, sfx)
     if echo: print ("Saving model to {}".format(filename))
     model.save(filename)
 
@@ -407,7 +428,7 @@ def model_fit(model, X, y, epochs, batch_size, stateful=False, shuffle=True, sav
                       ,callbacks=[metrics]
                       ).history
 
-        print("{} {:4d} : loss {:.04f}, accuracy {:0.4f}, Precision {:0.4f}".format(lbl, epoch, h['loss'][0], h['acc'][0], h['MyPrecision'][0]))
+        print("{} {:4d} : loss {:.04f}, accuracy {:0.4f}, Precision {:0.4f} - {}".format(lbl, epoch, h['loss'][0], h['acc'][0], h['MyPrecision'][0], time.ctime()))
         accuracy += h['acc']
         precision += h['MyPrecision']
         loss += h['loss']
@@ -416,13 +437,13 @@ def model_fit(model, X, y, epochs, batch_size, stateful=False, shuffle=True, sav
         # When stateful, this is suppressed, so must manually reset after the epoch (effectively the one big sequence)
         if stateful: model.reset_states()
 
-        if save: model_save(model, data_path, model_name, "latest")
+        if save: model_save(model, models_path, model_name, "latest")
 
         if not (epoch % 10):
-            if save: model_save(model, data_path, model_name, epoch)
+            if save: model_save(model, models_path, model_name, epoch)
 
 
-    if save: model_save(model, data_path, model_name, "final", echo=True, temp=False)
+    if save: model_save(model, models_path, model_name, "final", echo=True, temp=False)
     return precision
 
 def model_fit_stateful(model, X, y, epochs, save=True, mask_zero=True, n_obs=None):
@@ -461,28 +482,30 @@ def model_fit_stateful(model, X, y, epochs, save=True, mask_zero=True, n_obs=Non
         accuracy.append(np.mean(tr_acc_s))
         loss.append(np.mean(tr_loss_s))
 
-        print("Epoch {:4d} : loss {:.04f}, accuracy {:0.4f}".format(epoch, loss[-1],accuracy[-1]))
+        print("Epoch {:4d} : loss {:.04f}, accuracy {:0.4f} - {}".format(epoch, loss[-1],accuracy[-1], time.ctime()))
 
-        if save: model_save(model, data_path, model_name, "latest")
+        if save: model_save(model, models_path, model_name, "latest")
         if not (epoch % 10):
-            if save: model_save(model, data_path, model_name, epoch)
+            if save: model_save(model, models_path, model_name, epoch)
 
-    if save: model_save(model, data_path, model_name, "final", echo=True, temp=False)
+    if save: model_save(model, models_path, model_name, "final", echo=True, temp=False)
 
     #return tr_loss_s, tr_acc_s
-    return loss, accuracy
+    return accuracy
 
 
 ##################  Evaluate Models #####################
 
 
-def predict(model_info, word, flag=1, max_len=10):
+def predict(model_info, word, flag=1, max_len=10, printing=False):
     raw_obs = list(word)
     model, x_dims, normalise = model_info
 
     x_data = createX([raw_obs], coder, max_len = max_len, normalise=normalise)
     x_shape = (1, max_len, 1)[0:x_dims]
     X = x_data.reshape(x_shape)
+
+    if printing: print("X shape: {}".format(X.shape))
 
     result = model.predict(X, batch_size=1, verbose=0)
 
@@ -509,13 +532,13 @@ def predict(model_info, word, flag=1, max_len=10):
         pred = pa.DataFrame(probs, coder.classes_)
     return pred
 
-def predict_next_letter(model_info, text, ax=None, top_n=None, max_len=10, sorting=False):
+
+def predict_next_letter(model_info, text, ax=None, top_n=None, max_len=10, printing=False):
     '''
     :param model_info:
     :param letters:
     :param prefix:
     :param max_len:
-    :param sorting:
     :param flag: Which category to give the probability for.  If None then returns the argmax category
     :return:
     '''
@@ -526,7 +549,7 @@ def predict_next_letter(model_info, text, ax=None, top_n=None, max_len=10, sorti
 
     raw_obs = list(text)
     prediction_index = len(text)-1
-    pred = predict(model_info, raw_obs, flag=None, max_len=max_len)
+    pred = predict(model_info, raw_obs, flag=None, max_len=max_len, printing=printing)
 
     # Keep 5 most likely next letters
     predCol = pred.columns[prediction_index]
@@ -540,7 +563,8 @@ def predict_next_letter(model_info, text, ax=None, top_n=None, max_len=10, sorti
     ax.set_title ("Probability of letter following: {}...".format(text))
     #ax.set_title ("Results for model {}".format(model.name))
 
-def predict_next_letter_stateful(model_info, text, ax=None, top_n=None):
+
+def predict_next_letter_stateful(model_info, text, ax=None, top_n=None, printing=False):
  #   text = 'hello'
 #    top_n = 5
 
@@ -554,7 +578,7 @@ def predict_next_letter_stateful(model_info, text, ax=None, top_n=None):
     # Always reset and then play in the full list of letters
     model.reset_states()
     for i, letter in enumerate(text):
-        pred = predict(model_info, [letter], flag=None, max_len=1)
+        pred = predict(model_info, [letter], flag=None, max_len=1, printing=printing)
 
 
     # Keep 5 most likely next letters from the last prediction
@@ -569,6 +593,7 @@ def predict_next_letter_stateful(model_info, text, ax=None, top_n=None):
     ax.bar(results.index.values, results[text])
     ax.set_title ("Probability of letter following: {}...".format(text))
     #ax.set_title ("Results for model {}".format(model.name))
+
 
 def predict_each(model_info, letters, prefix='', flag=1, max_len=10, sorting=False):
     '''
@@ -610,6 +635,7 @@ def predict_each(model_info, letters, prefix='', flag=1, max_len=10, sorting=Fal
     plt.show()
     return results
 
+
 def predict_positions(model_info, word, flag=1, max_len=10):
     model, x_dims, normalise = model_info
     raw_obs = list(word)
@@ -622,6 +648,7 @@ def predict_positions(model_info, word, flag=1, max_len=10):
     plt.title("Results for model {}".format(model.name))
     plt.show()
 
+
 def predict_stateful(model, X, obs, n_time, n_cats):
     prob = np.zeros((n_time, n_cats))
 
@@ -632,6 +659,7 @@ def predict_stateful(model, X, obs, n_time, n_cats):
         prob[t, :] = model.predict_on_batch(Xij)
 
     return prob
+
 
 def test_stateful(model, X, obs, n_time, n_cats):
     loss = np.zeros(n_time)
@@ -694,6 +722,119 @@ def print_obs(Xi, y_cats, p_cats, prob_i=None, loss_i=None, acc_i=None, n_time=N
     print()
 
 
+def predict_obs(model, X, i, n_time, n_cats, stateful=False, mask_zero=True):
+    if stateful:
+        # Find number of populated timesteps for this obs
+        n_time_i = np.count_nonzero(X[i]) if mask_zero else n_time
+        # Probabilities for each category for each timestep, e.g. (10 timesteps, 28 cats)
+        prob_i = predict_stateful(model, X, i, n_time=n_time_i, n_cats=n_cats)
+    else:
+        Xi = X[i:i + 1, ...]
+        prob_i = np.squeeze(model.predict(Xi, batch_size=1, verbose=0))
+    return prob_i
+
+
+def evaluate_obs(model, X, y, i, n_time, n_cats, stateful=False, mask_zero=True):
+    if stateful:
+        # Find number of populated timesteps for this obs
+        n_time_i = np.count_nonzero(X[i]) if mask_zero else n_time
+        loss_i, acc_i = test_stateful(model, X, i, n_time=n_time_i, n_cats=n_cats)
+        return loss_i.tolist(), acc_i.tolist()
+
+    else:
+        Xi = X[i:i + 1, ...]
+        yi = y[i:i + 1, ...]
+        loss_i, acc_i = model.evaluate(Xi, yi, batch_size=1, verbose=0)
+        return [loss_i], [acc_i]
+
+
+def pred_counts(model, X, y, n_top=3, results='s', n_obs=None, n_find=None, mask_zero=True, stateful=False, coder=None):
+    '''
+    :param model:
+    :param X:
+    :param y:
+    :param n_top:
+    :param results: Set to 's' for Summary, 'c' for Counts, 'd' for Detail, or combinations e.g. 'scd'
+    :param n_obs:
+    :param n_find:
+    :param mask_zero:
+    :param stateful:
+    :param coder:
+    :return:
+    '''
+    # model=model5
+    details = True if 'd' in results else False
+    summary = True if 's' in results else False
+    counts  = True if 'c' in results else False
+
+    if n_obs is None: n_obs = X.shape[0]
+    n_time = X.shape[1]
+    n_cats  = y.shape[2]
+    if n_find is None: n_find = n_time
+    # Counts summarise for each (prefix size, prediction rank, find position)
+    countsD = collections.defaultdict(lambda:0)
+    detail = []
+    #Xi = X[0,...]
+    #yi = y[0,...]
+    def update_for_obs(Xi, yi, prob_i, n_time_i):
+        #j = 0
+        # Cut off y when padding starts (1 before the end, as last prediction is of a padded value)
+        y_cats = np.argmax(yi[0:n_time_i-1], axis=1)
+        if coder: y_cats = coder.inverse_transform(y_cats-1)
+        for j in range(n_time_i):
+            # Get predicted categories in descending order
+            if coder:
+                probSr = pa.Series(data=prob_i[j,1:], index=coder.classes_).sort_values(ascending=False)
+            else:
+                probSr = pa.Series(data=prob_i[j]).sort_values(ascending=False)
+
+            # Get first part of X upto the prediction
+            if coder:
+                # Subtract 1 to allow for padding
+                x_pfx = coder.inverse_transform(Xi[0:j + 1] - 1)
+            else:
+                x_pfx = Xi[0:j+1]
+           # t=0
+            for t in range(n_top):
+                next_top_pred = probSr.index[t]
+                next_top_prob = probSr.values[t]
+                y_rest        = y_cats[j:]
+                find_preds    = list(np.where(y_rest==next_top_pred)[0])
+                # Check if it has been found, and how far ahead
+                if (len(find_preds)>0):
+                    f = find_preds[0]
+                    # Checi if index where prediction is found is within range
+                    if (f < n_find) : countsD[(j,t,f)] += 1
+                else:
+                    f = -1  # Not found
+                if details:
+                    detail.append({'Pfx':x_pfx, 'Pred':next_top_pred, 'Prob':next_top_prob, 'n_Pfx':j, 'n_Top':t, 'n_Find':f})
+
+    # i =0
+    for i in range(n_obs):
+        n_time_i = np.count_nonzero(X[i]) if mask_zero else n_time
+        prob_i   = predict_obs(model, X, i, n_time, n_cats, stateful=stateful, mask_zero=mask_zero)
+        update_for_obs(X[i,...], y[i,...], prob_i, n_time_i)
+
+    countsDf = pa.Series(countsD).reset_index()
+    countsDf.columns = (['n_Pfx','n_Top', 'n_Find', 'Count'])
+
+    results = []
+
+
+    if summary:
+        summaryDf = pa.pivot_table(countsDf, index='n_Top', columns='n_Find', values='Count', aggfunc=np.sum) / np.sum(countsDf['Count'])
+        results.append(summaryDf)
+
+    if counts: results.append(countsDf)
+
+    if details:
+        detailDf = pa.DataFrame.from_dict(detail)[['Pfx', 'Pred', 'Prob', 'n_Pfx', 'n_Top', 'n_Find']]
+        results.append(detailDf)
+
+    return results
+
+
 def model_evaluate(model, X, y, stateful = False, mask_zero=True, printing=False, coder=None, n_obs=None):
     #model = model5
 
@@ -704,7 +845,7 @@ def model_evaluate(model, X, y, stateful = False, mask_zero=True, printing=False
         X=X[0:n_obs,...]
         y=y[0:n_obs,...]
 
-    print("Evaluating model '{}'".format(model_name))
+    print("Evaluating model '{}'".format(model.name))
     print("X shape: {}".format(X.shape)) # (450, 10, 1)
     print("y shape: {}".format(y.shape)) # (450, 10, 28)
     print()
@@ -716,26 +857,12 @@ def model_evaluate(model, X, y, stateful = False, mask_zero=True, printing=False
 
     acc_s = []
     loss_s = []
+    i=0
     for i in range(n_obs):
-        # Find number of populated timesteps for this obs
-        n_time_i = np.count_nonzero(X[i]) if mask_zero else n_time
-
-        if stateful:
-            # Probabilities for each category for each timestep, e.g. (10 timesteps, 28 cats)
-            prob_i        = predict_stateful(model, X, i, n_time=n_time_i, n_cats=n_cats)
-            loss_i, acc_i = test_stateful(model, X, i, n_time=n_time_i, n_cats=n_cats)
-            # Add new value for each timestep
-            acc_s  += acc_i.tolist()
-            loss_s += loss_i.tolist()
-
-        else:
-            Xi = X[i:i+1,...]
-            yi = y[i:i+1,...]
-            prob_i        = np.squeeze(model.predict(Xi, batch_size=1, verbose=0))
-            loss_i, acc_i = model.evaluate(Xi, yi, batch_size=1, verbose=0)
-            # Append single new value
-            acc_s.append(acc_i)
-            loss_s.append(loss_i)
+        prob_i         = predict_obs(model, X, i, n_time, n_cats, stateful=stateful, mask_zero=mask_zero)
+        loss_i, acc_i  = evaluate_obs(model, X, y, i, n_time, n_cats, stateful=stateful, mask_zero=mask_zero)
+        acc_s  += acc_i
+        loss_s += loss_i
 
         if printing:
             # Drop 1st column which is just the prediction of a padded value
@@ -753,7 +880,7 @@ def model_evaluate(model, X, y, stateful = False, mask_zero=True, printing=False
     accuracy = (np.mean(acc_s))
     loss     = (np.mean(loss_s))
 
-    print("Evaluated : loss {:.04f}, accuracy {:0.4f}".format(loss,accuracy))
+    print("Model '{}' : loss {:.04f}, accuracy {:0.4f}".format(model.name, loss,accuracy))
     np.set_printoptions(formatter=None)
 
     #return loss_s, acc_s
@@ -852,8 +979,10 @@ plt.plot(h)
 #       - ok is v.different
 
 h=[]
-model_name="5.1_next_letter"
+model_name="5_2_next_letter"
 raw_data, coder = get_raw_data(n_chars=20000)
+raw_data, coder = get_raw_data(n_chars=200000, filename="training words.txt")
+
 num_cats = len(coder.classes_)+1
 X,y = get_xy_data(raw_data, coder, max_len=max_len, normalise=False, x_dims=2, flags=0)
 num_flags = y.shape[2] - 1
@@ -864,6 +993,8 @@ model_evaluate(model5, X, y, stateful=False, printing=False, mask_zero=True)
 model_evaluate(model5, X, y, stateful=False, printing=True, mask_zero=True, n_obs=3)
 
 plt.plot(h)
+
+
 
 
 
@@ -890,21 +1021,82 @@ model_evaluate(model6, X, y, stateful=True, printing=False, mask_zero=False)
 
 
 
+# Stateful with Embedding
+# model 7   - based on   3000 obs and  50 epochs, 10 embeddings
+# model 7.1 - based on  20000 obs and 250 epochs, 10 embeddings
+# model 7.2 - based on 200000 obs and 250 epochs, 10 embeddings
+# Much slower using stateful: 1 epoch with 200k obs takes 5 mins, compared to 30secs for model5
+h=[]
+model_name="7_2_Stateful_emb_next_letter"
+raw_data, coder = get_raw_data(n_chars=20000)
+raw_data, coder = get_raw_data(n_chars=200000, filename="training words.txt")
+X,y = get_xy_data(raw_data, coder, max_len=max_len, normalise=False, x_dims=2, flags=0)
+num_flags = y.shape[2] - 1
+model7 = create_model_F(hidden_units=100, num_flags=num_flags, embedding_size=10, model_name=model_name)
+h += model_fit_stateful(model7, X, y, epochs=5)
+plt.plot(h)
+
+model_evaluate(model7, X, y, stateful=True, printing=False)
+model_evaluate(model7, X, y, stateful=True, printing=True, coder=coder, n_obs=3)
 
 
 
-################ Predicting ##################
+
+################ Predicting & Evaluating ##################
 
 # Import a model
-model1a = model_load("model_vowel1a_final")
-model1a = model_load("Finals\model_vowel1a_final")
-model1b = model_load("\Finals\model_vowel1b_final")
-model3 = model_load("Finals\model_vowel3_final")
-model4 = model_load("Finals\model_4.1_vowel_space_final")
-model4b = model_load("Finals\model_4b_vowel_space_final")
-model5 = model_load("model_5_next_letter_40")
-model5 = model_load("Finals\model_5_next_letter_final")
-model6 = model_load("Finals\model_6_Stateful_next_letter_final")
+model1a = model_load("Keep\model_vowel1a_final")
+model1b = model_load("Keep\model_vowel1b_final")
+model3  = model_load("Keep\model_vowel3_final")
+model4  = model_load("Keep\model_4.1_vowel_space_final")
+model4b = model_load("Keep\model_4b_vowel_space_final")
+model5  = model_load("Keep\model_5_next_letter_final")
+model52  = model_load("Keep\model_5_2_next_letter_final")
+model6  = model_load("Keep\model_6_Stateful_next_letter_final")
+model7  = model_load("Keep\model_7_Stateful_emb_next_letter_final")
+model71  = model_load("Keep\model_7_1_Stateful_emb_next_letter_final")
+model72  = model_load("Keep\model_7_2_Stateful_emb_next_letter_v80")
+
+
+x_dim = 2 # Use 3 if no embeddings in model (e.g. model 6)
+max_len=10
+raw_data, coder = get_raw_data(n_chars=20000)
+X,y = get_xy_data(raw_data, coder, max_len=max_len, normalise=False, x_dims=x_dim, flags=0)
+
+
+
+
+
+
+model52.summary()
+model6.summary()
+model72.summary()
+
+model_evaluate(model52, X, y, stateful=False)
+# Model 'Keep\model_5_2_next_letter_final' : loss 1.4773, accuracy 0.6383
+
+X,y = get_xy_data(raw_data, coder, max_len=max_len, normalise=False, x_dims=3, flags=0)
+model_evaluate(model6, X, y, stateful=True)
+# Model 'Keep\model_6_Stateful_next_letter_final' : loss 3.1114, accuracy 0.4097
+
+X,y = get_xy_data(raw_data, coder, max_len=max_len, normalise=False, x_dims=2, flags=0)
+model_evaluate(model72, X, y, stateful=True)
+# Model 'Keep\model_7_2_Stateful_emb_next_letter_v80' : loss 2.7270, accuracy 0.4485
+
+
+
+
+# See whether the Top predictions are Found, given diffent length Prefix of sequence
+s, c, d = pred_counts(model5, X, y, n_top=3, n_obs=1, coder=coder, results = 'scd')
+s, c = pred_counts(model5, X, y, n_top=4, n_find=4, results='sc')
+# 33% of Top predictions were found in the next position, 4.6% at position 1
+# 10% of 2nd predictions were found in the next position, 6.1% at position 1
+# n_Find         0         1         2         3
+# n_Top
+# 0       0.332552  0.048922  0.030466  0.022791
+# 1       0.104289  0.061050  0.038727  0.022967
+# 2       0.068022  0.047340  0.029060  0.022322
+# 3       0.048922  0.068549  0.032048  0.021971
 
 
 
@@ -918,6 +1110,7 @@ model_info = (model4, 2, False)
 model_info = (model4b, 2, False)
 model_info = (model5, 2, False)
 model_info = (model6, 3, False)
+model_info = (model7, 2, False)
 
 
 
@@ -935,13 +1128,18 @@ raw_data, coder = get_raw_data(n_chars=3000)
 # t..w..e..n..t..y
 model5 = model_load("Finals\model_5_next_letter_final")
 model_info = (model5, 2, False)
-plot_next_letter = lambda ax, text: predict_next_letter(model_info, text, ax)
+plot_next_letter = lambda ax, text: predict_next_letter(model_info, text, ax, printing=True)
 myUi.ChartUpdater(plot_Fn = plot_next_letter)
 
 
 model6 = model_load("Finals\model_6_Stateful_next_letter_final")
 model_info = (model6, 3, False)
 plot_next_letter = lambda ax, text: predict_next_letter_stateful(model_info, text, ax)
+myUi.ChartUpdater(plot_Fn = plot_next_letter)
+
+model7  = model_load("Keep\model_7_Stateful_emb_next_letter_final")
+model_info = (model7, 2, False)
+plot_next_letter = lambda ax, text: predict_next_letter_stateful(model_info, text, ax, printing=True)
 myUi.ChartUpdater(plot_Fn = plot_next_letter)
 
 
