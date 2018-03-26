@@ -24,7 +24,9 @@ import MyUtils.utils_nn as MyNn
 import MyUtils.utils_plot as MyPlot
 import MyUtils.utils_ui as myUi
 import time
-
+from tabulate import tabulate as tab
+import random
+import seaborn as sns
 
 
 ## Getting warnings from sklearn doing coder.inverse_transform(2)
@@ -37,6 +39,10 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 #data_path = r"C:\Temp\TestPyCharm\Data\Models\002 RNN vowel"
 models_path = r"C:\Users\rkirk\Documents\GIT\Python\TestPyCharm\Data\Models\002 RNN vowel"
 data_path = r"C:\Users\rkirk\Documents\GIT\Python\TestPyCharm\Data\Sample Data"
+alphabet = 'abcdefghijklmnopqrstuvwxyz'
+
+# Global coder that is used by default if None is set for a model (e.g. if it has been reloaded)
+_coder = None
 
 ############# Raw Data #############
 
@@ -48,6 +54,28 @@ def read_file(filename=None, n=10000):
         text = f.read(n).replace("\n", " ")
     print("Read {} characters".format(len(text)))
     return text
+
+def randomise_text(text, model_info=None, p_insert=0.0, max_insert=0, insert_from=alphabet, seed=999):
+    '''
+        Randomly inserts characters into the raw_data
+    '''
+    if model_info is not None:
+        rand_info = model_info['data_info'].get('randomise')
+        if (rand_info is None):
+            print("No randomisation requested.")
+            return text
+        p_insert, max_insert = (rand_info)
+
+    print("Randomising raw_data with prob of {}, inserting upto {} chars from '{}' with seed {}".format(p_insert, max_insert, insert_from, seed))
+    random.seed = seed
+    rand_data = []
+    for c in text:
+        rand_data.append(c)
+        if random.random() < p_insert:
+            for i in range(random.randint(1, max_insert)):
+                rand_data.append(random.choice(insert_from))
+    print ("Randomised data is now {} chars.".format(len(rand_data)))
+    return ''.join(rand_data)
 
 def prep_text(input_text:str):
     import string
@@ -69,7 +97,6 @@ def words_to_raw_data(words):
     lol =  [(list(w+' ')) for w in words]
     return lol
 
-
 def create_encoder(raw_data):
     '''
     :param list_of_lists:
@@ -90,18 +117,37 @@ def create_encoder(raw_data):
 
     return coder
 
+def get_raw_data(data_info=None, n_chars = 1000, filename=None, return_text = False):
+    if (data_info) :
+        n_chars = data_info['n_chars']
 
-def get_raw_data(n_chars = 1000, filename=None):
     text      = read_file(n=n_chars, filename=filename)
+
+    if model_info:
+        text = randomise_text(text, model_info)
+
     words     = prep_text(text)
     raw_data  = words_to_raw_data(words)
+
+
 
     max_len   = max([len(raw_obs) for raw_obs in raw_data])
     n_obs = len(raw_data)
     print("Got {} words with max length {}".format(n_obs, max_len))
 
     coder = create_encoder(raw_data)
-    return raw_data, coder
+
+
+    if data_info:
+        data_info.update({'num_categories': len(coder.classes_) + 1})
+        data_info.update({'coder': coder})
+
+    # Used to return coder
+    if return_text:
+        return raw_data, text, coder
+    else:
+        return raw_data, coder
+
 
 
 ############ X Y Data ##############
@@ -117,7 +163,6 @@ def encode_raw_data(coder, raw_data, max_len=None):
    #    print(i)
    #    coder.transform(raw_obs)
 
-
     if max_len:
         coded_data = pad_data(coded_data, max_len, -1)
     return coded_data
@@ -125,8 +170,6 @@ def encode_raw_data(coder, raw_data, max_len=None):
 def transform_x_data(coder, coded_data):
     max_code = len(coder.classes_)
     return (coded_data + 1) / max_code
-
-
 
 def is_vowel(raw_item):
     vowels = set(list('aeiou'))
@@ -146,7 +189,18 @@ def flag_data(raw_obs, flags):
         spaces=0
     return list(vowels + spaces)
 
-def createY(raw_data, max_len = 10, n_dims=3, flags=1):
+def createY_flag(raw_data, coder, max_len = 10, n_dims=3, flags=1):
+    '''
+        Flags = 0, returns categorical : 1-hot encoding of X (for next char)
+        Flags = 1, returns binary      : 1 for vowels, 0 otherwise (for next char)
+        Flags = 2, returns categorical : 1 for vowels, 2 for space, 0 otherwise (for next char)
+    :param raw_data:
+    :param coder:
+    :param max_len:
+    :param n_dims:
+    :param flags:
+    :return:
+    '''
     if flags==0:
         flagged = encode_raw_data(coder, raw_data, max_len=max_len)+1
     else:
@@ -161,6 +215,7 @@ def createY(raw_data, max_len = 10, n_dims=3, flags=1):
     n_obs=len(raw_data)
 
     if flags==1:
+        # For single flag, just return as binary
         y = shifted
         y_shape = (n_obs, max_len, 1)[0:n_dims]
     else:
@@ -172,6 +227,130 @@ def createY(raw_data, max_len = 10, n_dims=3, flags=1):
     print(y.shape)
 
     return y
+
+def createY_dists(raw_data, coder, max_len = 10, max_ahead = 1, n_obs=None, distance=False):
+
+    print("Getting Y categories with look ahead of {}".format(max_ahead))
+
+    if n_obs is None: n_obs=len(raw_data)
+    n_time = max_len
+    n_cats = len(coder.classes_) + 1
+
+    # Encode the categories, adding 1 to make space for 0 to be the padding
+    flagged = encode_raw_data(coder, raw_data[0:n_obs], max_len=max_len) + 1
+    padded  = K_prep_seq.pad_sequences(flagged, maxlen = max_len, value=0, padding='post')
+
+    def get_dists1(A):
+        '''
+            First try - retunrs df that needs to be transposed
+        :return:
+        '''
+        obs_ix = np.arange(0, n_obs)
+        def dist(p, d):
+            pfx  = A[:, 0:p+1]
+            cats = A[:, p+d]     # Distance d away
+            dists = pa.DataFrame(np.stack([obs_ix, np.full(n_obs,d), cats]).T)
+            dists.columns=["Ix","Dist","Cat"]
+            return dists
+
+        df = pa.DataFrame()
+        for d in range(p+1, n_time):
+            df = df.append(dist(p, d))
+
+        df = df.sort_values(by=['Ix', 'Dist'])
+        return df
+
+    def get_dists2(A, start_pos=0):
+        '''
+            Hopefully more efficient
+            Could also use approach of shifting, then turn into 1-hot, shift again and make "2-hot"
+            and combine shifted arrays.
+        :param A:
+        :return:
+        '''
+        df = None
+        p,i=(0,0)
+        def dist_i(i):
+            # Get the categories from the start_pos position to the end, for observation i
+            cats = np.trim_zeros(A[i, start_pos:], 'b')
+            # Generate distance values 0, 1, 2, 3... for how far each item is from the start pos
+            dists1 = np.arange(0, len(cats))
+            # Or just populate a 1 for all upcoming categories, if not worried about how far ahead they are
+            # - Not so useful if going to generate distances with different prefixes later
+            dists2 = np.full(len(cats), 1)
+            # Put distances against categories in dataframe for this obs
+            distsDf = pa.DataFrame(data=[dists1], index=[i])
+            # Columns have to be string to do concat later
+            distsDf.columns = list(map(str, cats))
+            # Keep first occurrence only of each category
+            distsDf = distsDf.T.reset_index().drop_duplicates(subset='index', keep='first').set_index('index')
+            distsDf.index.rename('Obs', inplace=True)
+            return distsDf.T
+        for i in range(n_obs):
+            # Get the position of each category for this obs
+            dfi = dist_i(i)
+            # Combine for all observations
+            if (df is None):  df = dfi
+            else:             df = pa.concat([df, dfi], join="outer")
+
+        df.columns = list(map(int, df.columns))
+        df.sort_index(axis=1, inplace=True)
+        return df
+
+    # Encodes each observation giving the position of the first occurrence of each item in the observation
+    # - the start_pos is given a value of 0, the character at the next position is given a value of 1 etc
+    dists = get_dists2(padded)
+
+    # Add columns for any categories that haven't been seen in the observations processed
+    dists = dists.reindex(list(range(0, n_cats)), axis=1)
+
+
+    def get_y_hot():
+        '''
+            Gets the required output vector y for position p in the input vector
+        '''
+        # Initialise df that will be repeatedly processes
+        d_iter = dists
+        # Create empty array based on the number of categories that have been found in the dists
+        n_cats = len(dists.columns)
+        y = np.empty((n_obs, n_time, n_cats))
+        for p in range(max_len):
+            # Blank out distances to the current item p
+            d_iter.replace(0, np.NaN, inplace=True)
+            # Set this as the distances for position p
+            y[:, p, :] = d_iter
+            # Subtract 1 to remove next item in the sequence
+            d_iter = d_iter.subtract(1)
+        return y
+
+    # Get distances to each category in 1-hot style
+    y = get_y_hot()
+
+    # Blank out where too far ahead
+    if distance:
+        print("Using distance to next character")
+        # For distance return 1/position (e.g. for distance 1,2,3 predicting 1, 0.5, 0.3333)
+        transform_y = np.vectorize(lambda y: 1/y if y <= max_ahead else np.NaN)
+    else:
+        # For non-distance, always predict 1, for any positions in range
+        transform_y = np.vectorize(lambda y: 1 if y <= max_ahead else np.NaN)
+
+    y_ = np.nan_to_num(transform_y(y))
+
+    def check(y_check, obs=0):
+        r_obs = pa.DataFrame(data = coder.transform(raw_data[obs]) + 1, index = raw_data[obs]).T
+        d_obs = dists.iloc[obs:obs+1,:].dropna(axis=1)
+        y_obs = pa.DataFrame(data= y_check[obs, ...])
+        y_obs = y_obs.dropna(axis=1, how='all')
+        print(tab(r_obs, headers='keys'))
+        print()
+        print(tab(d_obs, headers='keys'))
+        print()
+        print(tab(y_obs, headers='keys'))
+    # check(y, 1)
+    # check(y_, 1)
+
+    return y_
 
 def createX(raw_data, coder, max_len = 10, normalise=True, n_dims=3, printing='True'):
     x = encode_raw_data(coder, raw_data, max_len=max_len)
@@ -195,22 +374,53 @@ def print_sample(coded_data, coder, n=5):
         decode_obs = [coder.inverse_transform(code) for code in coded_obs]
         print(decode_obs)
 
-def get_xy_data(raw_data, coder, max_len=10, normalise=True, x_dims=3, y_dims=3, flags=1):
+def get_xy_data(raw_data, coder=None, data_info=None, max_len=10, normalise=True, x_dims=3, y_dims=3, flags=1, max_ahead=None):
+    '''
+        Flags = None, returns categorical : 1-hot encoding of X (for next ' max_ahead' chars)
+            - Uses max_ahead to get 1's for each of the next chars
+        Flags = 0, returns categorical : 1-hot encoding of X (for next char)
+        Flags = 1, returns binary      : 1 for vowels, 0 otherwise (for next char)
+        Flags = 2, returns categorical : 1 for vowels, 2 for space, 0 otherwise (for next char)
+    :param raw_data:
+    :param coder:
+    :param max_len:
+    :param normalise:
+    :param x_dims:
+    :param y_dims:
+    :param flags:
+    :param max_ahead:
+    :return:
+    '''
+    if (data_info):
+        max_len     = data_info.get('max_len')
+        normalise   = data_info.get('normalise')
+        x_dims      = data_info.get('x_dims')
+        y_dims      = data_info.get('y_dims')
+        flags       = data_info.get('flags')
+        max_ahead   = data_info.get('max_ahead')
+        distance    = data_info.get('distance')
+        coder       = data_info.get('coder')
+
+
     max_len   = min(max_len, max([len(raw_obs) for raw_obs in raw_data]))
     n_obs = len(raw_data)
     print("Applying max length {} to {} words".format(max_len, n_obs))
     print(raw_data[:4])
 
     X = createX(raw_data, coder, max_len = max_len, normalise=normalise, n_dims=x_dims)
-    y = createY(raw_data, max_len = max_len, n_dims=y_dims, flags=flags)
+    if (max_ahead is not None) & (flags is None):
+        y = createY_dists(raw_data, coder, max_len = max_len, max_ahead=max_ahead, distance=distance)
+    else:
+        # Can do 1-ahead if flags is None
+        y = createY_flag(raw_data, coder, max_len = max_len, n_dims=y_dims, flags=flags)
 
     print("X shape: {}".format(X.shape))
     print("y shape: {}".format(y.shape))
 
+    if data_info:
+        data_info.update({'num_flags': y.shape[2] - 1})
+
     return X,y
-
-
-
 
 
 
@@ -278,7 +488,7 @@ def create_model_C(hidden_units, max_len, num_categories, embedding_size, model_
     return model
 
 
-def create_model_D(hidden_units, max_len, num_categories, embedding_size, num_flags, mask_zero=False, model_name="ModelD"):
+def create_model_D(hidden_units, max_len, num_categories, embedding_size, num_flags, dropout=None, mask_zero=False, model_name="ModelD"):
     '''
         Input has to be 2 dimensions: n_obs * n_time_stamp (with no n_features)
         Output is categorical
@@ -290,9 +500,32 @@ def create_model_D(hidden_units, max_len, num_categories, embedding_size, num_fl
     '''
     model = Sequential(name=model_name)
     model.add(Embedding(input_dim=num_categories, input_length=max_len, output_dim=embedding_size, mask_zero=mask_zero)) # , dropout=0.2, mask_zero=True))
-    model.add(LSTM(hidden_units, return_sequences=True))
+    model.add(LSTM(hidden_units, return_sequences=True, dropout=dropout))
     model.add(TimeDistributed(Dense(num_flags+1, activation = "softmax")))
     model.compile(loss=keras.losses.categorical_crossentropy, optimizer='adam', metrics=['accuracy'])
+
+    print(model.summary())
+    return model
+
+
+def create_model_D_(model_info):
+    '''
+        Input has to be 2 dimensions: n_obs * n_time_stamp (with no n_features)
+        Output is categorical
+    :param hidden_units:
+    :param max_len:
+    :param num_categories:
+    :param embedding_size:
+    :return:
+    '''
+
+    mi = model_info
+    di = model_info['data_info']
+    model = Sequential(name=mi['name'])
+    model.add(Embedding(input_dim=di['num_categories'], input_length=di['max_len'], output_dim=mi['embedding_size'], mask_zero=mi['mask_zero'])) # , dropout=0.2, mask_zero=True))
+    model.add(LSTM(mi['hidden_units'], return_sequences=True, dropout=mi['dropout']))
+    model.add(TimeDistributed(Dense(di['num_flags']+1, activation = "softmax")))
+    model.compile(loss=model_info['loss'], optimizer='adam', metrics=['accuracy'])
 
     print(model.summary())
     return model
@@ -327,13 +560,20 @@ def create_model_F(hidden_units, num_flags, embedding_size, time_steps=1, batch_
 
 #################  Process models
 
-def model_load(model_name):
+def model_load(model_name_or_info):
+    if (type(model_name_or_info) is dict):
+        model_name = "\\keep\\model_{}_final".format(model_name_or_info['name'])
+
     filepath = "{}\\{}.hdf5".format(models_path, model_name)
     print("Loading model from {}".format(filepath))
     model = load_model(filepath)
     # Name doesn't get saved
     model.name = model_name
     print("Loaded model {}".format(model.name))
+
+    if (type(model_name_or_info) is dict):
+        model_name_or_info['model'] = model
+
     return model
 
 
@@ -398,7 +638,7 @@ class Metrics(keras.callbacks.Callback):
         logs.update({'MyPrecision':precision})
 
 
-def model_fit(model, X, y, epochs, batch_size, stateful=False, shuffle=True, save=True):
+def model_fit(model, X, y, epochs, batch_size, model_info=None, stateful=False, shuffle=True, save=True):
     # When running as stateful, the whole training set is the single large sequence, so must not shuffle it.
     # When not stateful, each item in the training set is a different individual sequence, so can shuffle these
     if stateful:
@@ -410,6 +650,13 @@ def model_fit(model, X, y, epochs, batch_size, stateful=False, shuffle=True, sav
             raise ValueError("When using stateful it is assumed that each X value has a single time-step but there are {}".format(timesteps))
     else:
         lbl = "Epoch"
+
+    model_name = "Unknown Model"
+    if model_info:
+        x_shape = X.shape
+        x_shape = [x_shape[0], x_shape[1], 1][0:model_info['data_info']['x_dims']]
+        X.reshape(x_shape)
+        model_name = model.name
 
     print("Fitting model '{}' over {} epochs".format(model_name,epochs))
     print("X shape: {}".format(X.shape))
@@ -425,12 +672,14 @@ def model_fit(model, X, y, epochs, batch_size, stateful=False, shuffle=True, sav
         # the training data will be randomly shuffled at each epoch
         h = model.fit(X, y, epochs=1, batch_size=batch_size, verbose=0, shuffle=shuffle
                       ,validation_split=0.25
-                      ,callbacks=[metrics]
+                      #,callbacks=[metrics]
                       ).history
 
-        print("{} {:4d} : loss {:.04f}, accuracy {:0.4f}, Precision {:0.4f} - {}".format(lbl, epoch, h['loss'][0], h['acc'][0], h['MyPrecision'][0], time.ctime()))
+        # Got error on callback with dropout i
+        #print("{} {:4d} : loss {:.04f}, accuracy {:0.4f}, Precision {:0.4f} - {}".format(lbl, epoch, h['loss'][0], h['acc'][0], h['MyPrecision'][0], time.ctime()))
+        print("{} {:4d} : loss {:.04f}, accuracy {:0.4f} - {}".format(lbl, epoch, h['loss'][0], h['acc'][0], time.ctime()))
         accuracy += h['acc']
-        precision += h['MyPrecision']
+        #precision += h['MyPrecision']
         loss += h['loss']
 
         # When not stateful, state is reset automatically after each input
@@ -444,7 +693,12 @@ def model_fit(model, X, y, epochs, batch_size, stateful=False, shuffle=True, sav
 
 
     if save: model_save(model, models_path, model_name, "final", echo=True, temp=False)
+
+    if model_info:
+        model_info.update({'model':model})
+
     return precision
+
 
 def model_fit_stateful(model, X, y, epochs, save=True, mask_zero=True, n_obs=None):
     #model = model6
@@ -496,10 +750,29 @@ def model_fit_stateful(model, X, y, epochs, save=True, mask_zero=True, n_obs=Non
 
 ##################  Evaluate Models #####################
 
+def check_x_shape(X, model_info):
+    x_dims  = model_info['data_info']['x_dims']
+    max_len = model_info['data_info']['max_len']
+    x_shape = (X.shape[0], max_len, 1)[0:x_dims]
+    if (X.shape != x_shape):
+        print("Changing X shape from {} to {}".format(X.shape, x_shape))
+        X = X.reshape(x_shape)
+    return X
+
 
 def predict(model_info, word, flag=1, max_len=10, printing=False):
     raw_obs = list(word)
-    model, x_dims, normalise = model_info
+
+    if (type(model_info) is dict):
+        model, x_dims, normalise = (model_info['model'], model_info['data_info']['x_dims'], model_info['data_info']['normalise'])
+        coder = model_info['data_info'].get('coder')
+        max_len = model_info['data_info']['max_len']
+    else:
+        model, x_dims, normalise = model_info
+
+    if (coder is None):
+        print("********* No coder has been generated yet for this model.  Using global coder _coder *********")
+        coder = _coder
 
     x_data = createX([raw_obs], coder, max_len = max_len, normalise=normalise)
     x_shape = (1, max_len, 1)[0:x_dims]
@@ -533,7 +806,7 @@ def predict(model_info, word, flag=1, max_len=10, printing=False):
     return pred
 
 
-def predict_next_letter(model_info, text, ax=None, top_n=None, max_len=10, printing=False):
+def predict_next_letter(model_info, text, ax=None, top_n=None, printing=False):
     '''
     :param model_info:
     :param letters:
@@ -547,9 +820,18 @@ def predict_next_letter(model_info, text, ax=None, top_n=None, max_len=10, print
     else:
         ax.clear()
 
+    max_len = model_info['data_info']['max_len']
+    distance = model_info['data_info'].get('distance')
+
     raw_obs = list(text)
     prediction_index = len(text)-1
     pred = predict(model_info, raw_obs, flag=None, max_len=max_len, printing=printing)
+
+    if (distance):
+        pred = 1 / pred
+        pred = pred.applymap(lambda x: x if x<=10 else np.NaN)
+        # Converts to np - no longer a df
+        #pred = np.where(pred<=10, pred, 0)
 
     # Keep 5 most likely next letters
     predCol = pred.columns[prediction_index]
@@ -558,8 +840,16 @@ def predict_next_letter(model_info, text, ax=None, top_n=None, max_len=10, print
     else:
         predDf = pred[[predCol]]
     predDf.columns = [text]
+
+
     results = predDf
-    ax.bar(results.index.values, results[text])
+    if distance:
+        sns.stripplot(y=results[text], x=results.index.values, hue=results[text], ax=ax)
+        ax.legend().set_visible(False)
+        ax.grid(axis='x')
+    else:
+        ax.bar(results.index.values, results[text])
+
     ax.set_title ("Probability of letter following: {}...".format(text))
     #ax.set_title ("Results for model {}".format(model.name))
 
@@ -748,13 +1038,13 @@ def evaluate_obs(model, X, y, i, n_time, n_cats, stateful=False, mask_zero=True)
         return [loss_i], [acc_i]
 
 
-def pred_counts(model, X, y, n_top=3, results='s', n_obs=None, n_find=None, mask_zero=True, stateful=False, coder=None):
+def pred_counts(model_or_info, X, y, n_top=3, results='s', n_obs=None, n_find=None, mask_zero=True, stateful=False, coder=None):
     '''
-    :param model:
+    :param model_or_info:
     :param X:
     :param y:
     :param n_top:
-    :param results: Set to 's' for Summary, 'c' for Counts, 'd' for Detail, or combinations e.g. 'scd'
+    :param results: Set to 's' for Summary, 'c' for Counts, 'p' for Prefixes, 'd' for Detail, or combinations e.g. 'scd'
     :param n_obs:
     :param n_find:
     :param mask_zero:
@@ -762,10 +1052,20 @@ def pred_counts(model, X, y, n_top=3, results='s', n_obs=None, n_find=None, mask
     :param coder:
     :return:
     '''
+
+    if (type(model_or_info) is dict):
+        model = model_or_info['model']
+        check_x_shape(X, model_or_info)
+    else:
+        model = model_or_info
+
+    print("Evaluating predictions for model {}".format(model.name))
+
     # model=model5
-    details = True if 'd' in results else False
-    summary = True if 's' in results else False
-    counts  = True if 'c' in results else False
+    details  = True if 'd' in results else False
+    summary  = True if 's' in results else False
+    prefixes = True if 'p' in results else False
+    counts   = True if 'c' in results else False
 
     if n_obs is None: n_obs = X.shape[0]
     n_time = X.shape[1]
@@ -818,21 +1118,35 @@ def pred_counts(model, X, y, n_top=3, results='s', n_obs=None, n_find=None, mask
 
     countsDf = pa.Series(countsD).reset_index()
     countsDf.columns = (['n_Pfx','n_Top', 'n_Find', 'Count'])
+    summaryDf = pa.pivot_table(countsDf, index='n_Top', columns='n_Find', values='Count', aggfunc=np.sum) / np.sum(countsDf['Count'])
+
+    if (type(model_or_info) is dict):
+        model_or_info.update({'summary':summaryDf})
 
     results = []
-
-
     if summary:
-        summaryDf = pa.pivot_table(countsDf, index='n_Top', columns='n_Find', values='Count', aggfunc=np.sum) / np.sum(countsDf['Count'])
         results.append(summaryDf)
+        print(tab(summaryDf, headers='keys'))
+        print()
 
     if counts: results.append(countsDf)
+
+    if prefixes:
+        summaryDf2 = pa.pivot_table(countsDf, index=['n_Pfx','n_Top'], columns='n_Find', values='Count', aggfunc=np.sum)
+        pfxDf = pa.pivot_table(countsDf, index=['n_Pfx'], values='Count', aggfunc=np.sum)
+        pfxDf = summaryDf2.join(pfxDf)
+        for f in range(n_find):
+            pfxDf["Pct{}".format(f)] = pfxDf[f] / pfxDf['Count']
+        results.append(pfxDf.reset_index())
 
     if details:
         detailDf = pa.DataFrame.from_dict(detail)[['Pfx', 'Pred', 'Prob', 'n_Pfx', 'n_Top', 'n_Find']]
         results.append(detailDf)
 
-    return results
+    if (len(results)==1):
+        return results[0]
+    else:
+        return tuple(results)
 
 
 def model_evaluate(model, X, y, stateful = False, mask_zero=True, printing=False, coder=None, n_obs=None):
@@ -885,6 +1199,8 @@ def model_evaluate(model, X, y, stateful = False, mask_zero=True, printing=False
 
     #return loss_s, acc_s
     return loss, accuracy
+
+
 
 
 
@@ -979,15 +1295,17 @@ plt.plot(h)
 #       - ok is v.different
 
 h=[]
-model_name="5_2_next_letter"
+model_name, dropout =("5_3a_next_letter_NoDropout", 0.0)
+model_name, dropout =("5_3b_next_letter_40Dropout", 40.0)
+model_name, dropout =("5_2b_next_letter_40Dropout", 40.0) # 200000
 raw_data, coder = get_raw_data(n_chars=20000)
 raw_data, coder = get_raw_data(n_chars=200000, filename="training words.txt")
 
 num_cats = len(coder.classes_)+1
 X,y = get_xy_data(raw_data, coder, max_len=max_len, normalise=False, x_dims=2, flags=0)
 num_flags = y.shape[2] - 1
-model5 = create_model_D(hidden_units=100, max_len=max_len, num_categories=num_cats, embedding_size=50, num_flags=num_flags, model_name=model_name, mask_zero=True)
-h += model_fit(model5, X, y, epochs=2, batch_size=5)
+model5 = create_model_D(hidden_units=100, max_len=max_len, num_categories=num_cats, embedding_size=50, num_flags=num_flags, model_name=model_name, mask_zero=True, dropout=dropout)
+h += model_fit(model5, X, y, epochs=200, batch_size=5)
 model5.evaluate(X, y, batch_size=5)
 model_evaluate(model5, X, y, stateful=False, printing=False, mask_zero=True)
 model_evaluate(model5, X, y, stateful=False, printing=True, mask_zero=True, n_obs=3)
@@ -1042,9 +1360,274 @@ model_evaluate(model7, X, y, stateful=True, printing=True, coder=coder, n_obs=3)
 
 
 
+
+
+
+
+
+
+# Looking ahead & Random noise ##########################
+
+h=[]
+
+def data_with(data_settings):
+    data_info = {'n_chars': None, 'max_len': 10,
+                    'x_dims': 2, 'y_dims': 2,
+                    'flags': None, 'max_ahead': 1, 'distance':False,
+                    'normalise': False, 'randomise': None
+                    }
+    data_info.update(data_settings)
+    return data_info
+
+data_info0  = data_with({'n_chars':3000,  'max_len':10,  'flags':0,    })
+data_info1  = data_with({'n_chars':3000,  'max_len':10,  'max_ahead':1 })
+data_info1b = data_with({'n_chars':20000, 'max_len':10,  'max_ahead':1 })
+data_info1c = data_with({'n_chars':20000, 'max_len':10,  'max_ahead':1, 'randomise':(0.5, 1)})
+data_info2  = data_with({'n_chars':3000,  'max_len':10,  'max_ahead':2 })
+data_info2a = data_with({'n_chars':20000, 'max_len':10,  'max_ahead':2 })
+data_info2b = data_with({'n_chars':20000, 'max_len':15,  'max_ahead':3, 'randomise':(0.5, 1)})
+data_info2c = data_with({'n_chars':20000, 'max_len':15,  'max_ahead':2, 'randomise':(0.5, 1)})
+data_info2d = data_with({'n_chars':20000, 'max_len':15,  'max_ahead':2, 'randomise':(0.5, 1)})
+data_info2e = data_with({'n_chars':20000, 'max_len':15,  'max_ahead':2 })
+data_info3  = data_with({'n_chars':3000,  'max_len':10,  'max_ahead':3 })
+data_info4  = data_with({'n_chars':3000,  'max_len':10,  'max_ahead':4 })
+data_info4  = data_with({'n_chars':3000,  'max_len':10,  'max_ahead':2 })
+data_info5  = data_with({'n_chars':3000,  'max_len':10,  'max_ahead':2 , 'distance':True })
+
+test_data_dist   = data_with({'n_chars':3000,  'max_len':10,  'max_ahead':2 , 'distance':True })
+
+
+def model_with(model_settings):
+    model_info = {'create_fn': create_model_D_, 'name':"default_model",
+                          'dropout':0.0, 'hidden_units':100, 'embedding_size':50,
+                          'loss':keras.losses.categorical_crossentropy,
+                          'mask_zero':True, 'data_info':data_info0}
+
+    model_info.update(model_settings)
+    return model_info
+
+model8_0_info  = model_with({'name':"8_0_next_char_old",        'data_info':data_info0 })
+model8_1_info  = model_with({'name':"8_1_next_char_1",          'data_info':data_info1 })
+model8_1b_info = model_with({'name':"8_1b_next_char_1",         'data_info':data_info1b})
+model8_1c_info = model_with({'name':"8_1c_next_char_1_rnd",     'data_info':data_info1c})
+model8_2_info  = model_with({'name':"8_2_next_char_2",          'data_info':data_info2 })
+model8_2a_info = model_with({'name':"8_2a_next_char_2_20k",     'data_info':data_info2a})
+model8_2b_info = model_with({'name':"8_2a_next_char_3_rand20k", 'data_info':data_info2b})
+model8_2c_info = model_with({'name':"8_2a_next_char_2_rand20k", 'data_info':data_info2c})
+model8_2d_info = model_with({'name':"8_2d_next_char_1_rnd_40do",'data_info':data_info2d, 'dropout':0.4})
+model8_2d6_info= model_with({'name':"8_2d_next_char_1_rnd_60do",'data_info':data_info2d, 'dropout':0.6})
+model8_2e_info = model_with({'name':"clean data",               'data_info':data_info2e, 'dropout':0.4})
+model8_3_info  = model_with({'name':"8_3_next_char_3",          'data_info':data_info3 })
+model8_4_info  = model_with({'name':"8_4_next_char_4",          'data_info':data_info4 })
+model8_5_info  = model_with({'name':"8_5_distance_to",          'data_info':data_info5 , 'dropout':0.4, 'loss':keras.losses.mse})
+
+
+def data_only(data_info=None, model_info=None):
+    if (data_info is None):
+        data_info = model_info['data_info']
+
+    raw_data, text, coder = get_raw_data(data_info, return_text=True)
+    X, y = get_xy_data(raw_data, coder=coder, data_info=data_info)
+    return X,y, text, coder
+
+def create_model(model_info, data_only = False, extract=True, create=False, fit=True, epochs=100):
+    if extract | data_only:
+        X, y, text = data_only(data_info=model_info['data_info'])
+        if data_only:
+            return X, y, text
+
+    if create:
+        print("Creating new model {}".format(model_info['name']))
+        model = model_info['create_fn'](model_info)
+    else:
+        print ("Reusing existing model {}".format(model_info['name']))
+        model = model_info['model']
+
+    if fit:
+        model_fit(model, X, y, model_info=model_info, epochs=epochs, batch_size=5)
+        model.evaluate(X, y, batch_size=5)
+
+    return model, X, y
+
+
+
+
+
+# Reload previous models
+model_load(model8_1_info)
+model_load(model8_2_info)
+model_load(model8_2a_info)
+model_load(model8_2c_info)
+model_load(model8_4_info)
+
+model8_0,  X, y = create_model(model8_0_info,  create=True)
+model8_1,  X, y = create_model(model8_1_info,  create=True)
+model8_1b, X, y = create_model(model8_1b_info, create=True)     # Look ahead of 1 - no noise
+model8_1c, X, y = create_model(model8_1c_info, create=True)     # Look ahead of 1 - with noise
+model8_2,  X, y = create_model(model8_2_info,  create=True)
+model8_2a, X, y = create_model(model8_2a_info, create=True)
+model8_2b, X, y = create_model(model8_2b_info, create=True)
+model8_2c, X, y = create_model(model8_2c_info, create=True)     # Look ahead of 2 - with noise of 1
+model8_2d, X, y = create_model(model8_2d_info, create=True)     # Look ahead of 2 - with noise & dout
+model8_2d6, X, y = create_model(model8_2d6_info, create=True)     # Look ahead of 2 - with noise & dout
+model8_3,  X, y = create_model(model8_3_info,  create=True)
+model8_4,  X, y = create_model(model8_4_info,  create=True)
+model8_5,  X, y = create_model(model8_5_info,  create=False, fit=True,epochs=100)
+
+
+# Load clean data
+X, y, text, _coder = data_only(model8_1b_info)
+X, y, text, _coder = data_only(model8_2e_info)
+X, y, text, _coder = data_only(test_data_dist)
+print(text[0:1000])
+
+
+pred_counts(model8_0_info,  X, y, n_top=4, n_find=4, results='s')
+pred_counts(model8_1_info,  X, y, n_top=4, n_find=4, results='s')
+pred_counts(model8_1b_info, X, y, n_top=4, n_find=4, results='s')
+pred_counts(model8_1c_info, X, y, n_top=4, n_find=4, results='s')
+pred_counts(model8_2_info,  X, y, n_top=4, n_find=4, results='s')
+pred_counts(model8_2a_info, X, y, n_top=4, n_find=4, results='s')
+pred_counts(model8_2b_info, X, y, n_top=4, n_find=4, results='s')
+pred_counts(model8_2c_info, X, y, n_top=4, n_find=4, results='s')
+pred_counts(model8_2d_info, X, y, n_top=4, n_find=4, results='s')
+pred_counts(model8_2d6_info, X, y, n_top=4, n_find=4, results='s')
+pred_counts(model8_3_info,  X, y, n_top=4, n_find=4, results='s')
+pred_counts(model8_4_info,  X, y, n_top=4, n_find=4, results='s')
+#pred_counts(model8_5_info,  X, y, n_top=4, n_find=4, results='s')
+
+print(model8_1_info['summary'])
+# n_Find         0         1         2         3
+# n_Top
+# 0       0.456943  0.034954  0.024786  0.015253
+# 1       0.069908  0.089291  0.035272  0.021290
+# => High prediction 45% for position 0, but poor after that
+
+print(model8_2_info['summary'])
+# n_Find         0         1         2         3
+# n_Top
+# 0       0.265836  0.172378  0.023884  0.010644
+# 1       0.134735  0.106698  0.039720  0.014798
+# => Good prediction 26%, 16% for positions 0 and 1, but poor after that
+
+print(model8_3_info['summary'])
+# n_Find         0         1         2         3
+# n_Top
+# 0       0.221060  0.138816  0.069646  0.011172
+# 1       0.115046  0.092465  0.066793  0.019729
+# => Good prediction 26%, 16% for positions 0 and 1, and better 6.9% for 2
+
+
+
+
+# No noise - look ahead of 1
+# => Really focusses on next value and gets it well
+print(model8_1b_info['summary'])
+# n_Find         0         1         2         3
+# n_Top
+# 0       0.490836  0.026707  0.017543  0.013877
+# 1       0.080017  0.073000  0.032468  0.022884
+# 2       0.037390  0.046292  0.027702  0.019271
+
+
+# With noise - look ahead of 1
+# - still manages to make a decent prediction overall
+# Low frequency relationships (e.g. q...) are lost
+# But common ones like "th..e" still picked up.
+print(model8_1c_info['summary'])
+# n_Find         0         1         2         3
+# n_Top
+# 0       0.447218  0.066692  0.020492  0.013827
+# 1       0.056922  0.079690  0.031545  0.023804
+# 2       0.034112  0.060440  0.027736  0.019622
+
+# Prediction below of clean data
+# n_Find         0         1         2         3
+# n_Top
+# 0       0.313852  0.058677  0.047393  0.026926
+# 1       0.120778  0.053696  0.036576  0.024280
+# 2       0.072763  0.045837  0.030661  0.022879
+
+
+
+# Model - look ahead of 2
+# => Attention spread over 2 values, so not so good at pos=0
+print(model8_2a_info['summary'])
+# n_Find         0         1         2         3
+# n_Top
+# 0       0.299817  0.158680  0.018591  0.008641
+# 1       0.115737  0.120712  0.035350  0.018329
+# 2       0.031684  0.030636  0.046347  0.020162
+
+
+# Look ahead of 2 with random noise
+# - Still good at finding position 0, despite noise
+# - with noise, often the related item will now be at position 1
+print(model8_2c_info['summary'])
+# n_Find         0         1         2         3
+# n_Top
+# 0       0.271573  0.070701  0.045065  0.032318
+# 1       0.113728  0.054021  0.038904  0.026300
+# 2       0.088708  0.045918  0.036203  0.025494
+
+
+print(model8_2d_info['summary'])
+# Tested on clean data. having built with drop out
+# - is slightly better than no dropout
+# - chart of next is much cleaner
+# n_Find         0         1         2         3
+# n_Top
+# 0       0.310582  0.037420  0.028083  0.020483
+# 1       0.156702  0.047119  0.027432  0.021714
+# 2       0.124855  0.036769  0.031630  0.016358
+
+
+# Not much different with 60% dropout - worse if anything
+print(model8_2d6_info['summary'])
+# n_Find         0         1         2         3
+# n_Top
+# 0       0.309816  0.040591  0.031479  0.022228
+# 1       0.148695  0.042455  0.030581  0.019605
+# 2       0.116595  0.049772  0.026715  0.019122
+
+
+
+
+plot_next_letter = lambda ax, text: predict_next_letter(model8_1_info, text, ax, printing=True)
+plot_next_letter = lambda ax, text: predict_next_letter(model8_1b_info, text, ax, printing=True)
+plot_next_letter = lambda ax, text: predict_next_letter(model8_1c_info, text, ax, printing=True)
+plot_next_letter = lambda ax, text: predict_next_letter(model8_2_info, text, ax, printing=True)  # Based on 3k
+plot_next_letter = lambda ax, text: predict_next_letter(model8_2a_info, text, ax, printing=True) # Based on 20k
+plot_next_letter = lambda ax, text: predict_next_letter(model8_2b_info, text, ax, printing=True) # Based on 20k
+plot_next_letter = lambda ax, text: predict_next_letter(model8_2c_info, text, ax, printing=True) # Based on 20k
+plot_next_letter = lambda ax, text: predict_next_letter(model8_2d_info, text, ax, printing=True) # Based on 20k
+plot_next_letter = lambda ax, text: predict_next_letter(model8_4_info, text, ax, printing=True)
+plot_next_letter = lambda ax, text: predict_next_letter(model8_5_info, text, ax, printing=True)
+myUi.ChartUpdater(plot_Fn = plot_next_letter)
+# => Much more mixed predictions: e.g. after r is not just vowels
+# => Much more mixed predictions: e.g. q is followed by a,e,i as well as u
+
+
+# When using randomised data:
+# - becomes hard to see real patterns through the noise
+
+
+
+
+
+
+
+
+
+
+
+
 ################ Predicting & Evaluating ##################
 
-# Import a model
+# Best model is model5_2
+
+
+# Import one model
 model1a = model_load("Keep\model_vowel1a_final")
 model1b = model_load("Keep\model_vowel1b_final")
 model3  = model_load("Keep\model_vowel3_final")
@@ -1052,25 +1635,25 @@ model4  = model_load("Keep\model_4.1_vowel_space_final")
 model4b = model_load("Keep\model_4b_vowel_space_final")
 model5  = model_load("Keep\model_5_next_letter_final")
 model52  = model_load("Keep\model_5_2_next_letter_final")
+model52b = model_load("Keep\model_5_2b_next_letter_40Dropout_v165")
 model6  = model_load("Keep\model_6_Stateful_next_letter_final")
 model7  = model_load("Keep\model_7_Stateful_emb_next_letter_final")
 model71  = model_load("Keep\model_7_1_Stateful_emb_next_letter_final")
 model72  = model_load("Keep\model_7_2_Stateful_emb_next_letter_v80")
 
 
+model52.summary()
+model6.summary()
+model72.summary()
+
+
+
+### Load in data for use in evaluation
 x_dim = 2 # Use 3 if no embeddings in model (e.g. model 6)
 max_len=10
 raw_data, coder = get_raw_data(n_chars=20000)
 X,y = get_xy_data(raw_data, coder, max_len=max_len, normalise=False, x_dims=x_dim, flags=0)
 
-
-
-
-
-
-model52.summary()
-model6.summary()
-model72.summary()
 
 model_evaluate(model52, X, y, stateful=False)
 # Model 'Keep\model_5_2_next_letter_final' : loss 1.4773, accuracy 0.6383
@@ -1084,11 +1667,16 @@ model_evaluate(model72, X, y, stateful=True)
 # Model 'Keep\model_7_2_Stateful_emb_next_letter_v80' : loss 2.7270, accuracy 0.4485
 
 
-
-
+max_len=10
+raw_data, coder = get_raw_data(n_chars=3000)
+X,y = get_xy_data(raw_data, coder, max_len=max_len, normalise=False, x_dims=2, flags=0)
+model5 = model_load("Keep\model_5_2b_next_letter_40Dropout_v165")
+model5 = model_load("Keep\model_5_next_letter_final")
 # See whether the Top predictions are Found, given diffent length Prefix of sequence
 s, c, d = pred_counts(model5, X, y, n_top=3, n_obs=1, coder=coder, results = 'scd')
-s, c = pred_counts(model5, X, y, n_top=4, n_find=4, results='sc')
+s, c    = pred_counts(model5, X, y, n_top=4, n_find=4, results='sc')
+p       = pred_counts(model5, X, y, n_top=4, n_find=4, results='p')
+
 # 33% of Top predictions were found in the next position, 4.6% at position 1
 # 10% of 2nd predictions were found in the next position, 6.1% at position 1
 # n_Find         0         1         2         3
@@ -1097,6 +1685,48 @@ s, c = pred_counts(model5, X, y, n_top=4, n_find=4, results='sc')
 # 1       0.104289  0.061050  0.038727  0.022967
 # 2       0.068022  0.047340  0.029060  0.022322
 # 3       0.048922  0.068549  0.032048  0.021971
+
+# Accuracy increases based on the number of preceding characters
+pct_by_pfx = p[p['n_Top']==0][['n_Pfx','Pct0']]
+plt.bar(pct_by_pfx['n_Pfx'], pct_by_pfx['Pct0'])
+plt.show
+
+
+# The 3000  data was used in training & the No Dropout model does best on this
+# The 20000 data was new & the Dropout model does better on this as it has learned more general features
+
+# raw_data, coder = get_raw_data(n_chars=3000)     # raw_data, coder = get_raw_data(n_chars=20000)
+# model_5_2b_next_letter_40Dropout_v165            # model_5_2b_next_letter_40Dropout_v165
+# n_Find         0         1         2         3   # n_Find         0         1         2         3
+# n_Top                                            # n_Top
+# 0       0.387183  0.045280  0.026861  0.020721   # 0       0.414216  0.029513  0.024221  0.018111
+# 1       0.098235  0.056408  0.034536  0.020721   # 1       0.114233  0.057553  0.035077  0.020184
+# 2       0.076746  0.038373  0.033001  0.017268   # 2       0.065463  0.040532  0.031586  0.020839
+# 3       0.053722  0.035303  0.026477  0.029163   # 3       0.044242  0.036059  0.027331  0.020839
+
+# model_5_next_letter_final                        # model_5_next_letter_final
+# n_Find         0         1         2         3   # n_Find         0         1         2         3
+# n_Top                                            # n_Top
+# 0       0.510204  0.011303  0.008791  0.010047   # 0       0.332552  0.048922  0.030466  0.022791
+# 1       0.064992  0.086028  0.032967  0.016954   # 1       0.104289  0.061050  0.038727  0.022967
+# 2       0.034537  0.053689  0.027943  0.011303   # 2       0.068022  0.047340  0.029060  0.022322
+# 3       0.021350  0.066248  0.028885  0.014757   # 3       0.048922  0.068549  0.032048  0.021971
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1108,12 +1738,13 @@ model_info = (model1b, 3, False)
 model_info = (model3, 2, False)
 model_info = (model4, 2, False)
 model_info = (model4b, 2, False)
-model_info = (model5, 2, False)
+model_info = (model52b, 2, False)
 model_info = (model6, 3, False)
 model_info = (model7, 2, False)
 
 
 
+#############  Interactively see most likely next letters #####################
 
 # Note: you need a coder
 raw_data, coder = get_raw_data(n_chars=3000)
@@ -1126,13 +1757,21 @@ raw_data, coder = get_raw_data(n_chars=3000)
 # t..o..o..t..h
 # m..o..l..a..r
 # t..w..e..n..t..y
-model5 = model_load("Finals\model_5_next_letter_final")
+model5 = model_load("Keep\model_5_2b_next_letter_40Dropout_v165")
+model5 = model_load("Keep\model_5_next_letter_final")
 model_info = (model5, 2, False)
 plot_next_letter = lambda ax, text: predict_next_letter(model_info, text, ax, printing=True)
 myUi.ChartUpdater(plot_Fn = plot_next_letter)
 
+# With model5.2
+# Try: p..r..e..s..i..d..e..n..t
+# Try: r : only followed by vowels
+# can do r..n..a caused by international
+# - xecutions
 
-model6 = model_load("Finals\model_6_Stateful_next_letter_final")
+
+
+model6 = model_load("Keep\model_6_Stateful_next_letter_final")
 model_info = (model6, 3, False)
 plot_next_letter = lambda ax, text: predict_next_letter_stateful(model_info, text, ax)
 myUi.ChartUpdater(plot_Fn = plot_next_letter)
