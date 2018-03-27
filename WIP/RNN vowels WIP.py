@@ -55,12 +55,12 @@ def read_file(filename=None, n=10000):
     print("Read {} characters".format(len(text)))
     return text
 
-def randomise_text(text, model_info=None, p_insert=0.0, max_insert=0, insert_from=alphabet, seed=999):
+def randomise_text(text, data_info=None, p_insert=0.0, max_insert=0, insert_from=alphabet, seed=999):
     '''
         Randomly inserts characters into the raw_data
     '''
-    if model_info is not None:
-        rand_info = model_info['data_info'].get('randomise')
+    if data_info is not None:
+        rand_info = data_info.get('randomise')
         if (rand_info is None):
             print("No randomisation requested.")
             return text
@@ -77,18 +77,18 @@ def randomise_text(text, model_info=None, p_insert=0.0, max_insert=0, insert_fro
     print ("Randomised data is now {} chars.".format(len(rand_data)))
     return ''.join(rand_data)
 
-def prep_text(input_text:str):
+def prep_text(input_text:str, allow=None):
     import string
+    if (allow is None): allow = ""
+
+    invalid = string.punctuation + '1234567890' + '-_*—°×–−'
+    invalid = ''.join(list(set(invalid) - set(allow)))
 
     # Each split char separated by |
     splitter = '; |, |\r|\n| '
     x = input_text.lower()
-    punc   = str.maketrans('', '', string.punctuation)
-    digits = str.maketrans('', '', '1234567890')
-    other = str.maketrans('', '', '-_*—°×–−')
-    x = x.translate(punc)
-    x = x.translate(digits)
-    x = x.translate(other)
+    remove = str.maketrans('', '', invalid)
+    x = x.translate(remove)
     x = re.split(splitter, x)
     x = [i for i in x if i]
     return x
@@ -117,16 +117,20 @@ def create_encoder(raw_data):
 
     return coder
 
-def get_raw_data(data_info=None, n_chars = 1000, filename=None, return_text = False):
+def get_raw_data(data_info=None, n_chars = 1000, filename=None, return_text = False, allow=None):
     if (data_info) :
+        print("Using data_info to get_raw_data:\n{}".format(data_info))
         n_chars = data_info['n_chars']
+        allow = data_info.get('allow')
+        filename = data_info.get('filename')
 
     text      = read_file(n=n_chars, filename=filename)
 
-    if model_info:
-        text = randomise_text(text, model_info)
+    if data_info:
+        text  = randomise_text(text, data_info)
 
-    words     = prep_text(text)
+
+    words     = prep_text(text, allow=allow)
     raw_data  = words_to_raw_data(words)
 
 
@@ -228,7 +232,7 @@ def createY_flag(raw_data, coder, max_len = 10, n_dims=3, flags=1):
 
     return y
 
-def createY_dists(raw_data, coder, max_len = 10, max_ahead = 1, n_obs=None, distance=False):
+def createY_dists(raw_data, coder, max_len = 10, max_ahead = 1, out_of_range=0,  n_obs=None, distance=False):
 
     print("Getting Y categories with look ahead of {}".format(max_ahead))
 
@@ -263,8 +267,9 @@ def createY_dists(raw_data, coder, max_len = 10, max_ahead = 1, n_obs=None, dist
     def get_dists2(A, start_pos=0):
         '''
             Hopefully more efficient
-            Could also use approach of shifting, then turn into 1-hot, shift again and make "2-hot"
-            and combine shifted arrays.
+            - Could also use approach of shifting, then turn into 1-hot, shift again and make "2-hot" and combine shifted arrays
+            - This current approach is too simplistic as it can't handle the 2nd occurance of a letter
+                E.g. in word "Text", the T's position is recorded as 0, so 2nd T is silent.
         :param A:
         :return:
         '''
@@ -330,12 +335,13 @@ def createY_dists(raw_data, coder, max_len = 10, max_ahead = 1, n_obs=None, dist
     if distance:
         print("Using distance to next character")
         # For distance return 1/position (e.g. for distance 1,2,3 predicting 1, 0.5, 0.3333)
-        transform_y = np.vectorize(lambda y: 1/y if y <= max_ahead else np.NaN)
+        # - NaN otherwise so loss is 0
+        transform_y = np.vectorize(lambda y: 1/y if y <= max_ahead else out_of_range)
+        y_ = transform_y(y)
     else:
-        # For non-distance, always predict 1, for any positions in range
+        # For non-distance, always predict 1 for any positions in range, 0 otherwise
         transform_y = np.vectorize(lambda y: 1 if y <= max_ahead else np.NaN)
-
-    y_ = np.nan_to_num(transform_y(y))
+        y_ = np.nan_to_num(transform_y(y))
 
     def check(y_check, obs=0):
         r_obs = pa.DataFrame(data = coder.transform(raw_data[obs]) + 1, index = raw_data[obs]).T
@@ -399,6 +405,7 @@ def get_xy_data(raw_data, coder=None, data_info=None, max_len=10, normalise=True
         flags       = data_info.get('flags')
         max_ahead   = data_info.get('max_ahead')
         distance    = data_info.get('distance')
+        out_of_range= data_info.get('out_of_range')
         coder       = data_info.get('coder')
 
 
@@ -409,7 +416,7 @@ def get_xy_data(raw_data, coder=None, data_info=None, max_len=10, normalise=True
 
     X = createX(raw_data, coder, max_len = max_len, normalise=normalise, n_dims=x_dims)
     if (max_ahead is not None) & (flags is None):
-        y = createY_dists(raw_data, coder, max_len = max_len, max_ahead=max_ahead, distance=distance)
+        y = createY_dists(raw_data, coder, max_len = max_len, max_ahead=max_ahead, out_of_range=out_of_range, distance=distance)
     else:
         # Can do 1-ahead if flags is None
         y = createY_flag(raw_data, coder, max_len = max_len, n_dims=y_dims, flags=flags)
@@ -638,6 +645,113 @@ class Metrics(keras.callbacks.Callback):
         logs.update({'MyPrecision':precision})
 
 
+
+_EPSILON = K.epsilon()
+
+def _loss_tensor(y_true, y_pred):
+    y_pred = K.clip(y_pred, _EPSILON, 1.0-_EPSILON)
+    out = -(y_true * K.log(y_pred) + (1.0 - y_true) * K.log(1.0 - y_pred))
+    return K.mean(out, axis=-1)
+
+def loss_2_stage(y_true, y_pred):
+    y_pred = np.clip(y_pred, _Epsilon, 1-_Epsilon)
+    if (np.isnan(y_true)):
+        # Doesn't matter what prediction is, if there is no position to predict
+        loss = 0
+    else:
+        loss = (y_true - y_pred) ** 2
+    return loss
+
+def loss_2_stage_np_(y_true, y_pred):
+    y_pred = np.clip(y_pred, _EPSILON, 1-_EPSILON)
+    return np.where(np.isnan(y_true), 0, (y_true - y_pred) ** 2)
+
+def loss_2_stage_K__(y_pred, y_true):
+    '''
+        Loss for a vector
+        I actually tried that a few hours after posting. And I was puzzled by what I saw.
+        Keras did not give me an error, but the loss went immediately to NaN.
+        Eventually I solved the problem. The calling convention for a Keras loss function is first y_true, then y_pred -- or as I call them, tgt and pred.
+        But the calling convention for a TensorFlow loss function is pred first, then tgt
+    '''
+    y_pred = K.clip(y_pred, _EPSILON, 1-_EPSILON)
+    no_loss = tf.zeros_like(y_pred)
+    mse_loss = tf.square(tf.subtract(y_true, y_pred))
+    l1_loss = tf.subtract(y_true, y_pred)
+    #return tf.where(tf.is_nan(y_true), no_loss, mse_loss) #, no_loss, mse_loss
+    return tf.where(tf.is_nan(y_true), no_loss, mse_loss) #, no_loss, mse_loss
+
+    #return tf.where(tf.is_nan(y_true), 0, (y_true - y_pred) ** 2)
+
+def loss_2_stage_K_(y_true, y_pred):
+    '''
+        Loss for a vector
+    '''
+    y_pred = K.clip(y_pred, _EPSILON, 1-_EPSILON)
+    loss  = tf.abs(tf.subtract(y_true, y_pred))
+    loss2  = tf.square(loss)
+    loss0 = tf.multiply(y_true, loss2)
+    return loss0
+
+def loss_2_stage_K(y_true, y_pred):
+    '''
+        Mean Loss
+    :param y_true:
+    :param y_pred:
+    :return:
+    '''
+    print("Using loss 2 stage")
+    loss = K.mean(loss_2_stage_K_(y_true, y_pred))
+    #loss2 = tf.where(tf.is_nan(loss), tf.constant(99.0), tf.constant(11.0))
+    return loss
+
+def test_loss_np():
+    y_true = np.array([np.NaN, np.NaN, 0.0,  0.0,  1.0,  1.0])
+    y_pred = np.array([0.0   , 1.0   , 0.1,  0.9,  0.1,  0.9])
+    expect = np.array([0.0   , 0.0   , 0.01, 0.81, 0.81, 0.01])
+    loss_2_stage_np_(y_true, y_pred) == expect
+
+def test_loss_K():
+    #loss_fn = keras.losses.categorical_crossentropy
+    loss_fn = loss_2_stage_K_
+
+
+    y_true = K.constant(np.array([np.NaN, np.NaN, 0.0,  0.0,  1.0,  1.0]))
+    #y_true = K.constant(np.array([0,0, 0.0,  0.0,  1.0,  1.0]))
+    y_pred = K.constant(np.array([0.0   , 1.0   , 0.1,  0.9,  0.1,  0.9]))
+    loss_tf = loss_fn(y_true, y_pred)
+    expect = np.array([0.0   , 0.0   , 0.01, 0.81, 0.81, 0.01])
+    tfs = tf.Session()
+    actual = tfs.run(loss_tf)
+    #actual,a,b = tfs.run(loss_tf)
+    diff = np.sum(np.abs(actual - expect))
+    diff < 1E-5
+
+def test_loss_np():
+    y_true = np.array([np.NaN, np.NaN, 0.0,  0.0,  1.0,  1.0])
+    y_pred = np.array([0.0   , 1.0   , 0.1,  0.9,  0.1,  0.9])
+    expect = np.array([0.0   , 0.0   , 0.01, 0.81, 0.81, 0.01])
+    loss_2_stage_np_(y_true, y_pred) == expect
+
+def test_loss():
+    v_small = 1E-5
+    v_large = 0.999
+    abs(loss_2_stage(y_true = np.NaN, y_pred = 0))   == 0
+    abs(loss_2_stage(y_true = np.NaN, y_pred = 1))   == 0
+
+    # Truth is 1 -> MSE error
+    abs(loss_2_stage(y_true = 1.0,    y_pred = 1.0)) < v_small
+    abs(loss_2_stage(y_true = 1.0,    y_pred = 0.1)) == 0.9**2
+    abs(loss_2_stage(y_true = 1.0,    y_pred = 0.0)) > v_large
+
+    # Truth is 0 -> MSE error
+    abs(loss_2_stage(y_true = 0.0,    y_pred = 0.0)) < v_small
+    abs(loss_2_stage(y_true = 0.0,    y_pred = 0.9)) == 0.9**2
+    abs(loss_2_stage(y_true = 0.0,    y_pred = 1.0)) > v_large
+
+
+
+
 def model_fit(model, X, y, epochs, batch_size, model_info=None, stateful=False, shuffle=True, save=True):
     # When running as stateful, the whole training set is the single large sequence, so must not shuffle it.
     # When not stateful, each item in the training set is a different individual sequence, so can shuffle these
@@ -761,6 +875,10 @@ def check_x_shape(X, model_info):
 
 
 def predict(model_info, word, flag=1, max_len=10, printing=False):
+    '''
+         model_info = model8_5b_info
+         word="<"
+    '''
     raw_obs = list(word)
 
     if (type(model_info) is dict):
@@ -806,7 +924,7 @@ def predict(model_info, word, flag=1, max_len=10, printing=False):
     return pred
 
 
-def predict_next_letter(model_info, text, ax=None, top_n=None, printing=False):
+def predict_next_letter(model_info, text, ax=None, top_n=None, printing=False, cutoff=10):
     '''
     :param model_info:
     :param letters:
@@ -814,7 +932,12 @@ def predict_next_letter(model_info, text, ax=None, top_n=None, printing=False):
     :param max_len:
     :param flag: Which category to give the probability for.  If None then returns the argmax category
     :return:
+    model_info = model8_5c_info
+    text="<"
+    text="t"
+    printing=False
     '''
+
     if ax is None:
         ax = plt.gca()
     else:
@@ -829,7 +952,7 @@ def predict_next_letter(model_info, text, ax=None, top_n=None, printing=False):
 
     if (distance):
         pred = 1 / pred
-        pred = pred.applymap(lambda x: x if x<=10 else np.NaN)
+        pred = pred.applymap(lambda x: x if x<=cutoff else np.NaN)
         # Converts to np - no longer a df
         #pred = np.where(pred<=10, pred, 0)
 
@@ -1391,23 +1514,27 @@ data_info2d = data_with({'n_chars':20000, 'max_len':15,  'max_ahead':2, 'randomi
 data_info2e = data_with({'n_chars':20000, 'max_len':15,  'max_ahead':2 })
 data_info3  = data_with({'n_chars':3000,  'max_len':10,  'max_ahead':3 })
 data_info4  = data_with({'n_chars':3000,  'max_len':10,  'max_ahead':4 })
-data_info4  = data_with({'n_chars':3000,  'max_len':10,  'max_ahead':2 })
 data_info5  = data_with({'n_chars':3000,  'max_len':10,  'max_ahead':2 , 'distance':True })
+data_info5a = data_with({'n_chars':3000,  'max_len':10,  'max_ahead':4 , 'out_of_range':0.0, 'distance':True , 'allow':"</>", 'filename':"training words.html"})
+data_info5b = data_with({'n_chars':3000,  'max_len':10,  'max_ahead':4 , 'out_of_range':0.0, 'distance':True , 'allow':"</>", 'filename':"training words.html"})
+data_info5c = data_with({'n_chars':3000,  'max_len':10,  'max_ahead':2 , 'out_of_range':0.0, 'distance':True , 'allow':"</>", 'filename':"training words.html"})
+data_info5d = data_with({'n_chars':3000,  'max_len':10,  'max_ahead':2 , 'out_of_range':0.0, 'distance':True , 'allow':"</>", 'filename':"training words.html"})
+data_info5e = data_with({'n_chars':3000,  'max_len':10,  'max_ahead':4 , 'out_of_range':0.0, 'distance':True , 'allow':"</>", 'filename':"training words.html"})
 
-test_data_dist   = data_with({'n_chars':3000,  'max_len':10,  'max_ahead':2 , 'distance':True })
-
+# test_data_dist   = data_with({'n_chars':3000,  'max_len':10,  'max_ahead':2 , 'distance':True })
 
 def model_with(model_settings):
     model_info = {'create_fn': create_model_D_, 'name':"default_model",
                           'dropout':0.0, 'hidden_units':100, 'embedding_size':50,
                           'loss':keras.losses.categorical_crossentropy,
-                          'mask_zero':True, 'data_info':data_info0}
+                          'mask_zero':True}
 
     model_info.update(model_settings)
     return model_info
 
+
 model8_0_info  = model_with({'name':"8_0_next_char_old",        'data_info':data_info0 })
-model8_1_info  = model_with({'name':"8_1_next_char_1",          'data_info':data_info1 })
+model8_1_info  = model_with({'name':"8_1_next_char_1",          'data_info':data_info1,    'loss':loss_2_stage_K})
 model8_1b_info = model_with({'name':"8_1b_next_char_1",         'data_info':data_info1b})
 model8_1c_info = model_with({'name':"8_1c_next_char_1_rnd",     'data_info':data_info1c})
 model8_2_info  = model_with({'name':"8_2_next_char_2",          'data_info':data_info2 })
@@ -1419,12 +1546,29 @@ model8_2d6_info= model_with({'name':"8_2d_next_char_1_rnd_60do",'data_info':data
 model8_2e_info = model_with({'name':"clean data",               'data_info':data_info2e, 'dropout':0.4})
 model8_3_info  = model_with({'name':"8_3_next_char_3",          'data_info':data_info3 })
 model8_4_info  = model_with({'name':"8_4_next_char_4",          'data_info':data_info4 })
+
 model8_5_info  = model_with({'name':"8_5_distance_to",          'data_info':data_info5 , 'dropout':0.4, 'loss':keras.losses.mse})
+model8_5a_info = model_with({'name':"8_5a_distance_to_4",       'data_info':data_info5a, 'dropout':0.4, 'loss':keras.losses.mse})
+# Too simplistic to just model distance as 1/d
+# E.g. if predicting what follows 't' if will be averaging cases where 'e' is next (y=1), or position 2 (y=0.5) or not at all (y=0.0)
+# - in cases where X doesn't occur, the penalty is v.high for predicting say 1, when the truth is 0
+# - e.g. for "<Text>" the T is never predicted as 90% of the time it never occurs
+# - Better to have a 2 stage prediction:
+#   - Predict 1/0 for if X occurs at all (with a binary-cross-entropy loss)
+#   - In cases where thruth is 0, no further loss
+#   - In cases where thruth is 1, mse loss based on prediction of where.
+model8_5b_info = model_with({'name':"8_5b_2stage_distance_to_4",        'data_info':data_info5b, 'dropout':0.4, 'loss':loss_2_stage_K})
+model8_5c_info = model_with({'name':"8_5c_2stage_distance_to_4",        'data_info':data_info5c, 'dropout':0.4, 'loss':loss_2_stage_K})
+model8_5d_info = model_with({'name':"8_5d_2stage_distance_to_4",        'data_info':data_info5d, 'dropout':0.4, 'loss':loss_2_stage_K})
+model8_5e_info = model_with({'name':"8_5e_2stage_distance_to_4",        'data_info':data_info5e, 'dropout':0.4, 'loss':loss_2_stage_K})
 
 
-def data_only(data_info=None, model_info=None):
-    if (data_info is None):
-        data_info = model_info['data_info']
+
+def load_data(model_or_data_info):
+    if (model_or_data_info.get('data_info') is None):
+        data_info = model_or_data_info
+    else:
+        data_info = model_or_data_info['data_info']
 
     raw_data, text, coder = get_raw_data(data_info, return_text=True)
     X, y = get_xy_data(raw_data, coder=coder, data_info=data_info)
@@ -1432,7 +1576,7 @@ def data_only(data_info=None, model_info=None):
 
 def create_model(model_info, data_only = False, extract=True, create=False, fit=True, epochs=100):
     if extract | data_only:
-        X, y, text = data_only(data_info=model_info['data_info'])
+        X, y, text, coder = load_data(model_info)
         if data_only:
             return X, y, text
 
@@ -1447,7 +1591,7 @@ def create_model(model_info, data_only = False, extract=True, create=False, fit=
         model_fit(model, X, y, model_info=model_info, epochs=epochs, batch_size=5)
         model.evaluate(X, y, batch_size=5)
 
-    return model, X, y
+    #return model, X, y
 
 
 
@@ -1459,27 +1603,44 @@ model_load(model8_2_info)
 model_load(model8_2a_info)
 model_load(model8_2c_info)
 model_load(model8_4_info)
+model_load(model8_5_info)
+model_load(model8_5a_info)
+model_load(model8_5c_info)
 
-model8_0,  X, y = create_model(model8_0_info,  create=True)
-model8_1,  X, y = create_model(model8_1_info,  create=True)
-model8_1b, X, y = create_model(model8_1b_info, create=True)     # Look ahead of 1 - no noise
-model8_1c, X, y = create_model(model8_1c_info, create=True)     # Look ahead of 1 - with noise
-model8_2,  X, y = create_model(model8_2_info,  create=True)
-model8_2a, X, y = create_model(model8_2a_info, create=True)
-model8_2b, X, y = create_model(model8_2b_info, create=True)
-model8_2c, X, y = create_model(model8_2c_info, create=True)     # Look ahead of 2 - with noise of 1
-model8_2d, X, y = create_model(model8_2d_info, create=True)     # Look ahead of 2 - with noise & dout
-model8_2d6, X, y = create_model(model8_2d6_info, create=True)     # Look ahead of 2 - with noise & dout
-model8_3,  X, y = create_model(model8_3_info,  create=True)
-model8_4,  X, y = create_model(model8_4_info,  create=True)
-model8_5,  X, y = create_model(model8_5_info,  create=False, fit=True,epochs=100)
 
+create_model(model8_0_info,  create=True)
+create_model(model8_1_info,  create=True, epochs = 10)
+create_model(model8_1b_info, create=True)     # Look ahead of 1 - no noise
+create_model(model8_1c_info, create=True)     # Look ahead of 1 - with noise
+create_model(model8_2_info,  create=True)
+create_model(model8_2a_info, create=True)
+create_model(model8_2b_info, create=True)
+create_model(model8_2c_info, create=True)     # Look ahead of 2 - with noise of 1
+create_model(model8_2d_info, create=True)     # Look ahead of 2 - with noise & dout
+create_model(model8_2d6_info, create=True)     # Look ahead of 2 - with noise & dout
+create_model(model8_3_info,  create=True)
+create_model(model8_4_info,  create=True)
+create_model(model8_5_info,  create=False, fit=True,epochs=100)
+
+create_model(model8_5a_info, create=True)
+create_model(model8_5a_info, create=False, epochs=25)
+create_model(model8_5b_info, create=True, epochs=200)
+create_model(model8_5c_info, create=False, epochs=100)
+create_model(model8_5d_info, create=True, epochs=200)
+create_model(model8_5e_info, create=True, epochs=200)
 
 # Load clean data
-X, y, text, _coder = data_only(model8_1b_info)
-X, y, text, _coder = data_only(model8_2e_info)
-X, y, text, _coder = data_only(test_data_dist)
+X, y, text, _coder = load_data(model8_1b_info)
+X, y, text, _coder = load_data(model8_2e_info)
+X, y, text, _coder = load_data(test_data_dist)
+X, y, text, _coder = load_data(model8_4_info)
+X, y, text, _coder = load_data(model8_5_info)
+X, y, text, _coder = load_data(model8_5a_info)
+X, y, text, _coder = load_data(model8_5b_info)
+X, y, text, _coder = load_data(model8_5d_info)
 print(text[0:1000])
+
+pred = predict(model8_5_info, 't', flag=None, max_len=10, printing=True)
 
 
 pred_counts(model8_0_info,  X, y, n_top=4, n_find=4, results='s')
@@ -1493,8 +1654,10 @@ pred_counts(model8_2c_info, X, y, n_top=4, n_find=4, results='s')
 pred_counts(model8_2d_info, X, y, n_top=4, n_find=4, results='s')
 pred_counts(model8_2d6_info, X, y, n_top=4, n_find=4, results='s')
 pred_counts(model8_3_info,  X, y, n_top=4, n_find=4, results='s')
-pred_counts(model8_4_info,  X, y, n_top=4, n_find=4, results='s')
+pred_counts(model8_4_info,  X, y, n_top=4, n_find=4, results='s')   # Works quite well
 #pred_counts(model8_5_info,  X, y, n_top=4, n_find=4, results='s')
+
+
 
 print(model8_1_info['summary'])
 # n_Find         0         1         2         3
@@ -1593,6 +1756,7 @@ print(model8_2d6_info['summary'])
 
 
 
+
 plot_next_letter = lambda ax, text: predict_next_letter(model8_1_info, text, ax, printing=True)
 plot_next_letter = lambda ax, text: predict_next_letter(model8_1b_info, text, ax, printing=True)
 plot_next_letter = lambda ax, text: predict_next_letter(model8_1c_info, text, ax, printing=True)
@@ -1603,6 +1767,11 @@ plot_next_letter = lambda ax, text: predict_next_letter(model8_2c_info, text, ax
 plot_next_letter = lambda ax, text: predict_next_letter(model8_2d_info, text, ax, printing=True) # Based on 20k
 plot_next_letter = lambda ax, text: predict_next_letter(model8_4_info, text, ax, printing=True)
 plot_next_letter = lambda ax, text: predict_next_letter(model8_5_info, text, ax, printing=True)
+plot_next_letter = lambda ax, text: predict_next_letter(model8_5a_info, text, ax, printing=True, cutoff=100)
+plot_next_letter = lambda ax, text: predict_next_letter(model8_5b_info, text, ax, printing=True)
+plot_next_letter = lambda ax, text: predict_next_letter(model8_5c_info, text, ax, printing=True)
+plot_next_letter = lambda ax, text: predict_next_letter(model8_5d_info, text, ax, printing=True, cutoff=100)
+plot_next_letter = lambda ax, text: predict_next_letter(model8_5e_info, text, ax, printing=True, cutoff=100)
 myUi.ChartUpdater(plot_Fn = plot_next_letter)
 # => Much more mixed predictions: e.g. after r is not just vowels
 # => Much more mixed predictions: e.g. q is followed by a,e,i as well as u
@@ -1612,6 +1781,10 @@ myUi.ChartUpdater(plot_Fn = plot_next_letter)
 # - becomes hard to see real patterns through the noise
 
 
+# model8_4_info works well with max_ahead=4, but not using distances, just 1/0
+
+# Can't get actual distance values to work well
+# - Perhaps need to predict tuple (prob, dist) and have a better 2-stage loss function
 
 
 
