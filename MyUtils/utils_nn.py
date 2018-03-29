@@ -287,27 +287,306 @@ def argmax3d(prob3d):
 
 class Metrics(keras.callbacks.Callback):
     def on_epoch_end(self, batch, logs):
-        xV, yV, _ = self.validation_data
+        import sklearn
+        #xV=X
+       # yV=Y
+       # model = model1_info['model']
+
+        vd = self.validation_data
+        if (len(vd)==3):
+            xV, yV, _ = vd
+        elif (len(vd)==4):
+            xV, yV, _, _ = vd
+        else:
+            raise Exception("Didn't expect {} values in validation data".format(len(vd)))
 
         # predict returns a probability
         prob = np.asarray(self.model.predict(xV))
 
         if (prob.ndim==2):
-            #print("Treat as binary probabilities")
-            cats  = np.where(prob > 0.5, 1, 0)
+         #   print("Treat as binary probabilities")
+            pred  = np.where(prob > 0.5, 1, 0)
             average = 'binary'
 
         if (prob.ndim==3):
-            #print("Treat as category probabilities")
-            cats = argmax3d(prob)
+          #  print("Treat as category probabilities")
+            pred = argmax3d(prob)
             yV   = argmax3d(yV)
             # Need to average over the categories
             average = 'micro'
 
-      # print("Probs: {} {}".format(prob.shape, prob[:4]))
-      # print("Preds: {} {}".format(cats.shape, cats[:4]))
-      # print("Actual: {} {}".format(yV.shape, yV[:4]))
+        # Print first 4 observations
+     #  print("X: {} {}".format(xV.shape, xV[:4]))
+     #  print("Probs: {} {}".format(prob.shape, prob[:4]))
+     #  print("Preds: {} {}".format(pred.shape, pred[:4]))
+     #  print("Actual: {} {}".format(yV.shape, yV[:4]))
+
+        def flatten_non_zeros(A, Z):
+            # Mask out where zeros in the other array
+            A[Z==0] = -1
+            A = A.flatten()
+            return A[A != -1]
+
+        pred_ = flatten_non_zeros(pred, xV)
+        yV_   = flatten_non_zeros(yV, xV)
+
 
         # Compare as flattened list over all obs and timestamps
-        precision = sklearn.metrics.precision_score(yV.flatten(), cats.flatten(), average=average)
+        precision = sklearn.metrics.precision_score(yV_, pred_, average=average)
         logs.update({'MyPrecision':precision})
+
+
+def model_load(model_name_or_info, model_path = "C:\Temp", sub_folder = None, suffix=None):
+    if (type(model_name_or_info) is dict):
+        model_path = model_name_or_info['model_path']
+        model_name = model_name_or_info['model_name']
+
+    if sub_folder:
+        model_path = "{}\\{}".format(model_path, sub_folder)
+    if suffix:
+        model_name = "{}_{}".format(model_name, suffix)
+
+    filepath = "{}\\{}.hdf5".format(model_path, model_name)
+
+    print("Loading model from {}".format(filepath))
+    model = keras.models.load_model(filepath)
+    # Name doesn't get saved
+    model.name = model_name
+    print("Loaded model {}".format(model.name))
+
+    if (type(model_name_or_info) is dict):
+        model_name_or_info['model'] = model
+
+    return model
+
+
+def model_save(model_name_or_info, model_path="C:\Temp", model_name=None, suffix=None, echo=False, temp=True):
+    if (type(model_name_or_info) is dict):
+        model_path = model_name_or_info['path']
+        model_name = model_name_or_info['name']
+        model      = model_name_or_info['model']
+    else:
+        model      = model_name_or_info
+        if model_name is None:
+            model_name = model.name
+
+    if temp:
+        model_path = "{}\\{}".format(model_path, "Temp")
+    if suffix:
+        model_name = "{}_{}".format(model_name, suffix)
+
+    filepath = "{}\\{}.hdf5".format(model_path, model_name)
+
+    if echo: print ("Saving model to {}".format(filepath))
+    model.save(filepath)
+
+
+
+
+
+
+def predict_stateful(model, X, obs, n_time, n_cats):
+    prob = np.zeros((n_time, n_cats))
+
+    # Reset to run prediction for next obs - state builds up over timesteps
+    model.reset_states()
+    for t in range(n_time):
+        Xij = np.expand_dims(np.expand_dims(X[obs][t], 1), 1)
+        prob[t, :] = model.predict_on_batch(Xij)
+
+    return prob
+
+def test_stateful(model, X, obs, n_time, n_cats):
+    loss = np.zeros(n_time)
+    acc  = np.zeros(n_time)
+
+    # Reset to run prediction for next obs - state builds up over timesteps
+    model.reset_states()
+    for t in range(n_time):
+        Xij = np.expand_dims(np.expand_dims(X[obs][t], 1), 1)
+        yij = np.expand_dims(y[obs][t], axis=0)
+        loss[t], acc[t] = model.test_on_batch(Xij, yij)
+
+    # Non-stateful models just quote an overall value for the whole sequence of timesteps
+    #loss = np.mean(loss)
+    #acc  = np.mean(acc)
+
+    return loss, acc
+
+def predict_obs(model, X, i, n_time, n_cats, stateful=False, mask_zero=True):
+    if stateful:
+        # Find number of populated timesteps for this obs
+        n_time_i = np.count_nonzero(X[i]) if mask_zero else n_time
+        # Probabilities for each category for each timestep, e.g. (10 timesteps, 28 cats)
+        prob_i = predict_stateful(model, X, i, n_time=n_time_i, n_cats=n_cats)
+    else:
+        Xi = X[i:i + 1, ...]
+        prob_i = np.squeeze(model.predict(Xi, batch_size=1, verbose=0))
+    return prob_i
+
+def evaluate_obs(model, X, y, i, n_time, n_cats, stateful=False, mask_zero=True):
+    if stateful:
+        # Find number of populated timesteps for this obs
+        n_time_i = np.count_nonzero(X[i]) if mask_zero else n_time
+        loss_i, acc_i = test_stateful(model, X, i, n_time=n_time_i, n_cats=n_cats)
+        return loss_i.tolist(), acc_i.tolist()
+
+    else:
+        Xi = X[i:i + 1, ...]
+        yi = y[i:i + 1, ...]
+        loss_i, acc_i = model.evaluate(Xi, yi, batch_size=1, verbose=0)
+        return [loss_i], [acc_i]
+
+def pred_counts(model_or_info, X, y, n_top=3, results='s', n_obs=None, n_find=None, mask_zero=True, stateful=False, coder=None):
+    '''
+        Returns a summary of whether the top predictions were found in the actual subsequent timesteps
+        - Rows represent which prediction it was (0=prediction with highest probability)
+        - Columns show the percentage where this prediction occured:
+            - 0 = not at all
+            - 1 = as the next item
+            - 2 = as the 2nd item...etc
+        - E.g. 36.60% of the top predictions were found in the next position
+
+          n_Top         0          1          2           3
+        -------  --------  ---------  ---------  ----------
+              0  0.612539  0.366063   0.0134987  0.00789921
+              1  0.916608  0.0556944  0.0150985  0.0125987
+              2  0.981702  0.0133987  0.0029997  0.00189981
+
+    :param model_or_info:
+    :param X:
+    :param y:
+    :param n_top:
+    :param results: Set to 's' for Summary, 'c' for Counts, 'p' for Prefixes, 'd' for Detail, or combinations e.g. 'scd'
+    :param n_obs:
+    :param n_find:
+    :param mask_zero:
+    :param stateful:
+    :param coder:
+        model_info = model1_info
+        model = model_info['model']
+        y=Y
+    :return:
+    '''
+    import collections
+    from tabulate import tabulate as tab
+
+    if (type(model_or_info) is dict):
+        model = model_or_info['model']
+    else:
+        model = model_or_info
+
+    print("Evaluating predictions for model {}".format(model.name))
+
+    # model=model5
+    details  = True if 'd' in results else False
+    summary  = True if 's' in results else False
+    prefixes = True if 'p' in results else False
+    counts   = True if 'c' in results else False
+
+    if n_obs is None: n_obs = X.shape[0]
+    n_time = X.shape[1]
+    n_cats  = y.shape[2]
+    if n_find is None: n_find = n_time
+
+    print("- based on {} obs with {} categories and upto {} timesteps ".format(n_obs, n_cats, n_time ))
+
+
+    # Counts summarise for each (prefix size, prediction rank, find position)
+    countsD = collections.defaultdict(lambda:0)
+    detail = []
+    # i=91
+    #Xi = X[i,...]
+    #yi = y[i,...]
+    def update_for_obs(Xi, yi, prob_i, n_time_i):
+        # Get actual values for all but the last timestep (which predicts a padded value)
+        y_cats = np.argmax(yi[0:n_time_i-1], axis=1)
+        if coder: y_cats = coder.inverse_transform(y_cats-1)
+        # For each position 'j' in the time steps where a prediction is made
+        # j=0
+        for j in range(n_time_i):
+            # Get predicted categories for this position in descending order: probSr = most likely category first in series
+            if coder:
+                probSr = pa.Series(data=prob_i[j,1:], index=coder.classes_).sort_values(ascending=False)
+            else:
+                probSr = pa.Series(data=prob_i[j]).sort_values(ascending=False)
+
+            # Get all the remaining actual categories
+            y_rest        = y_cats[j:]
+            # Loop through the top predictions
+            # t=2
+            for t in range(n_top):
+                next_top_pred = probSr.index[t]     # Predicted code (or desc if coder provided)
+                next_top_prob = probSr.values[t]    # Probability of this code
+
+                # See if the predicted code occurs in the actual values
+                find_preds    = list(np.where(y_rest==next_top_pred)[0])
+                # Check if it has been found, and how far ahead
+                if (len(find_preds)>0):
+                    # Use the first occurrence of the predicted value (index 0)
+                    # f=1 means found as the expect value for this time-step (i.e. it was the next item)
+                    f = find_preds[0] + 1
+                    # Truncate if index where prediction is found is beyond the range
+                    if (f > n_find) : f = n_find + 1
+                else:
+                    f = 0  # Not found
+
+                # Always record count, so f=0 is count of when prediction was not found
+                countsD[(j, t, f)] += 1
+
+                if details:
+                    # Get first part of X upto 'j' where the prediction is being made
+                    if coder:
+                        # Subtract 1 to allow for padding
+                        x_pfx = coder.inverse_transform(Xi[0:j + 1] - 1)
+                    else:
+                        x_pfx = Xi[0:j + 1]
+
+                    detail.append({'Pfx':x_pfx, 'Pred':next_top_pred, 'Prob':next_top_prob, 'n_Pfx':j, 'n_Top':t, 'n_Find':f})
+
+    for i in range(n_obs):
+        # Find number of non-zero items for this obs, or use fixed n_time if not masking zero
+        n_time_i = np.count_nonzero(X[i]) if mask_zero else n_time
+        # Predict probability of each category for every timestep for this obs
+        prob_i   = predict_obs(model, X, i, n_time, n_cats, stateful=stateful, mask_zero=mask_zero)
+        # Increment count matrix for these probabilities based on the number of non-zero inputs
+        update_for_obs(X[i,...], y[i,...], prob_i, n_time_i)
+
+
+    countsDf = pa.Series(countsD).reset_index()
+    countsDf.columns = (['n_Pfx','n_Top', 'n_Find', 'Count'])
+    summaryDf_tf = pa.pivot_table(countsDf, index='n_Top', columns='n_Find', values='Count', aggfunc=np.sum)
+    summaryDf_t  = pa.pivot_table(countsDf, index='n_Top', values='Count', aggfunc=np.sum)
+    # summaryDf_t gives count of predictions for each value of n_Top.
+    # - All will be the same: the number of input values that were not-padded and so had a prediction
+    n_pred = summaryDf_t.iloc[0, 0]
+    summaryDf = summaryDf_tf / n_pred
+
+    if (type(model_or_info) is dict):
+        model_or_info.update({'summary':summaryDf})
+
+    results = []
+    if summary:
+        results.append(summaryDf)
+        print(tab(summaryDf, headers='keys'))
+        print()
+
+    if counts: results.append(countsDf)
+
+    if prefixes:
+        summaryDf2 = pa.pivot_table(countsDf, index=['n_Pfx','n_Top'], columns='n_Find', values='Count', aggfunc=np.sum)
+        pfxDf = pa.pivot_table(countsDf, index=['n_Pfx'], values='Count', aggfunc=np.sum)
+        pfxDf = summaryDf2.join(pfxDf)
+        for f in range(n_find):
+            pfxDf["Pct{}".format(f)] = pfxDf[f] / pfxDf['Count']
+        results.append(pfxDf.reset_index())
+
+    if details:
+        detailDf = pa.DataFrame.from_dict(detail)[['Pfx', 'Pred', 'Prob', 'n_Pfx', 'n_Top', 'n_Find']]
+        results.append(detailDf)
+
+    if (len(results)==1):
+        return results[0]
+    else:
+        return tuple(results)
+

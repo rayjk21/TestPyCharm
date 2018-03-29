@@ -2,7 +2,7 @@
 from __future__ import print_function
 
 import re
-import collections
+
 import os
 import tensorflow as tf
 from keras.models import Sequential, load_model
@@ -24,6 +24,7 @@ import MyUtils.utils_nn as MyNn
 import MyUtils.utils_plot as MyPlot
 import MyUtils.utils_ui as myUi
 import time
+import collections
 from tabulate import tabulate as tab
 import random
 import seaborn as sns
@@ -192,6 +193,7 @@ def flag_data(raw_obs, flags):
     if flags == 1:
         spaces=0
     return list(vowels + spaces)
+
 
 def createY_flag(raw_data, coder, max_len = 10, n_dims=3, flags=1):
     '''
@@ -570,6 +572,8 @@ def create_model_F(hidden_units, num_flags, embedding_size, time_steps=1, batch_
 def model_load(model_name_or_info):
     if (type(model_name_or_info) is dict):
         model_name = "\\keep\\model_{}_final".format(model_name_or_info['name'])
+    else:
+        model_name = model_name_or_info
 
     filepath = "{}\\{}.hdf5".format(models_path, model_name)
     print("Loading model from {}".format(filepath))
@@ -752,7 +756,7 @@ def test_loss():
 
 
 
-def model_fit(model, X, y, epochs, batch_size, model_info=None, stateful=False, shuffle=True, save=True):
+def model_fit(model, X, y, epochs, batch_size, model_info=None, stateful=False, shuffle=True, save=True, model_name = "Unknown Model"):
     # When running as stateful, the whole training set is the single large sequence, so must not shuffle it.
     # When not stateful, each item in the training set is a different individual sequence, so can shuffle these
     if stateful:
@@ -765,7 +769,7 @@ def model_fit(model, X, y, epochs, batch_size, model_info=None, stateful=False, 
     else:
         lbl = "Epoch"
 
-    model_name = "Unknown Model"
+
     if model_info:
         x_shape = X.shape
         x_shape = [x_shape[0], x_shape[1], 1][0:model_info['data_info']['x_dims']]
@@ -864,9 +868,9 @@ def model_fit_stateful(model, X, y, epochs, save=True, mask_zero=True, n_obs=Non
 
 ##################  Evaluate Models #####################
 
-def check_x_shape(X, model_info):
-    x_dims  = model_info['data_info']['x_dims']
-    max_len = model_info['data_info']['max_len']
+def check_x_shape(X, data_info):
+    x_dims  = data_info['x_dims']
+    max_len = data_info['max_len']
     x_shape = (X.shape[0], max_len, 1)[0:x_dims]
     if (X.shape != x_shape):
         print("Changing X shape from {} to {}".format(X.shape, x_shape))
@@ -874,19 +878,20 @@ def check_x_shape(X, model_info):
     return X
 
 
-def predict(model_info, word, flag=1, max_len=10, printing=False):
+def predict(model_info_or_tuple, word, flag=1, max_len=10, printing=False, coder=None):
     '''
-         model_info = model8_5b_info
-         word="<"
+         model_info = model41_info
+         word="hello"
+
     '''
     raw_obs = list(word)
 
-    if (type(model_info) is dict):
-        model, x_dims, normalise = (model_info['model'], model_info['data_info']['x_dims'], model_info['data_info']['normalise'])
-        coder = model_info['data_info'].get('coder')
-        max_len = model_info['data_info']['max_len']
+    if (type(model_info_or_tuple) is dict):
+        model, x_dims, normalise = (model_info_or_tuple['model'], model_info_or_tuple['data_info']['x_dims'], model_info_or_tuple['data_info']['normalise'])
+        coder = model_info_or_tuple['data_info'].get('coder')
+        max_len = model_info_or_tuple['data_info']['max_len']
     else:
-        model, x_dims, normalise = model_info
+        model, x_dims, normalise = model_info_or_tuple
 
     if (coder is None):
         print("********* No coder has been generated yet for this model.  Using global coder _coder *********")
@@ -924,9 +929,9 @@ def predict(model_info, word, flag=1, max_len=10, printing=False):
     return pred
 
 
-def predict_next_letter(model_info, text, ax=None, top_n=None, printing=False, cutoff=10):
+def predict_next_letter(model_info_or_tuple, text, ax=None, top_n=None, printing=False, cutoff=100, coder=None):
     '''
-    :param model_info:
+    :param model_info_or_tuple:
     :param letters:
     :param prefix:
     :param max_len:
@@ -943,12 +948,16 @@ def predict_next_letter(model_info, text, ax=None, top_n=None, printing=False, c
     else:
         ax.clear()
 
-    max_len = model_info['data_info']['max_len']
-    distance = model_info['data_info'].get('distance')
+    if (type(model_info_or_tuple) is dict):
+        max_len = model_info_or_tuple['data_info']['max_len']
+        distance = model_info_or_tuple['data_info'].get('distance')
+    else:
+        max_len  = 10
+        distance = False
 
     raw_obs = list(text)
     prediction_index = len(text)-1
-    pred = predict(model_info, raw_obs, flag=None, max_len=max_len, printing=printing)
+    pred = predict(model_info_or_tuple, raw_obs, flag=None, max_len=max_len, printing=printing, coder=coder)
 
     if (distance):
         pred = 1 / pred
@@ -977,7 +986,7 @@ def predict_next_letter(model_info, text, ax=None, top_n=None, printing=False, c
     #ax.set_title ("Results for model {}".format(model.name))
 
 
-def predict_next_letter_stateful(model_info, text, ax=None, top_n=None, printing=False):
+def predict_next_letter_stateful(model_info, text, ax=None, top_n=None, printing=False, coder=None):
  #   text = 'hello'
 #    top_n = 5
 
@@ -991,7 +1000,7 @@ def predict_next_letter_stateful(model_info, text, ax=None, top_n=None, printing
     # Always reset and then play in the full list of letters
     model.reset_states()
     for i, letter in enumerate(text):
-        pred = predict(model_info, [letter], flag=None, max_len=1, printing=printing)
+        pred = predict(model_info, [letter], flag=None, max_len=1, printing=printing, coder=coder)
 
 
     # Keep 5 most likely next letters from the last prediction
@@ -1049,10 +1058,13 @@ def predict_each(model_info, letters, prefix='', flag=1, max_len=10, sorting=Fal
     return results
 
 
-def predict_positions(model_info, word, flag=1, max_len=10):
+def predict_positions(model_info, word, flag=1, max_len=10, coder=None):
+    # model_info=model41_info
+    # word="hello"
+    # , flag, coder
     model, x_dims, normalise = model_info
     raw_obs = list(word)
-    pred = predict(model_info, raw_obs, flag=flag, max_len=max_len)
+    pred = predict(model_info, raw_obs, flag=flag, max_len=max_len, coder=coder)
     pred = np.squeeze(pred)
     pVowel = pa.Series(pred, name="P(vowel)")
     xs = pa.Series((raw_obs + list("__________"))[:max_len], name="Letters")
@@ -1178,7 +1190,7 @@ def pred_counts(model_or_info, X, y, n_top=3, results='s', n_obs=None, n_find=No
 
     if (type(model_or_info) is dict):
         model = model_or_info['model']
-        check_x_shape(X, model_or_info)
+        check_x_shape(X, model_or_info['data_info'])
     else:
         model = model_or_info
 
@@ -1332,7 +1344,10 @@ def model_evaluate(model, X, y, stateful = False, mask_zero=True, printing=False
 
 
 
-############## Build Models  ###################
+
+
+############## Build Models - individual specification, without model_info ###################
+
 max_len = 10
 h = []
 
@@ -1353,7 +1368,7 @@ model_name="vowel1b"
 raw_data, coder = get_raw_data(n_chars=6000)
 X,y = get_xy_data(raw_data, coder, max_len=max_len)
 model1b = create_model_A(hidden_units=50, input_shape = (max_len, 1))
-h += model_fit(model1b, X, y, epochs=20, batch_size=1, model_name=model_name)
+h += model_fit(model1b, X, y, epochs=2, batch_size=1, model_name=model_name)
 
 
 
@@ -1488,10 +1503,7 @@ model_evaluate(model7, X, y, stateful=True, printing=True, coder=coder, n_obs=3)
 
 
 
-
-# Looking ahead & Random noise ##########################
-
-h=[]
+####################   Using ModelInfo to specify models   ##################################
 
 def data_with(data_settings):
     data_info = {'n_chars': None, 'max_len': 10,
@@ -1501,6 +1513,51 @@ def data_with(data_settings):
                     }
     data_info.update(data_settings)
     return data_info
+
+def model_with(model_settings):
+    model_info = {'create_fn': create_model_D_, 'name':"default_model",
+                          'dropout':0.0, 'hidden_units':100, 'embedding_size':50,
+                          'loss':keras.losses.categorical_crossentropy,
+                          'mask_zero':True}
+
+    model_info.update(model_settings)
+    return model_info
+
+def load_data(model_or_data_info):
+    if (model_or_data_info.get('data_info') is None):
+        data_info = model_or_data_info
+    else:
+        data_info = model_or_data_info['data_info']
+
+    raw_data, text, coder = get_raw_data(data_info, return_text=True)
+    X, y = get_xy_data(raw_data, coder=coder, data_info=data_info)
+
+    data_info['coder'] = coder
+
+    return X,y, text, coder
+
+def build_model(model_info, data_only = False, extract=True, create=False, fit=True, epochs=100):
+    if extract | data_only:
+        X, y, text, coder = load_data(model_info)
+        if data_only:
+            return X, y, text
+
+    if create:
+        print("Creating new model {}".format(model_info['name']))
+        model = model_info['create_fn'](model_info)
+    else:
+        print ("Reusing existing model {}".format(model_info['name']))
+        model = model_info['model']
+
+    if fit:
+        model_fit(model, X, y, model_info=model_info, epochs=epochs, batch_size=5)
+        model.evaluate(X, y, batch_size=5)
+
+    #return model, X, y
+
+
+
+# Define models : Looking ahead & Random noise ##########################
 
 data_info0  = data_with({'n_chars':3000,  'max_len':10,  'flags':0,    })
 data_info1  = data_with({'n_chars':3000,  'max_len':10,  'max_ahead':1 })
@@ -1520,17 +1577,6 @@ data_info5b = data_with({'n_chars':3000,  'max_len':10,  'max_ahead':4 , 'out_of
 data_info5c = data_with({'n_chars':3000,  'max_len':10,  'max_ahead':2 , 'out_of_range':0.0, 'distance':True , 'allow':"</>", 'filename':"training words.html"})
 data_info5d = data_with({'n_chars':3000,  'max_len':10,  'max_ahead':2 , 'out_of_range':0.0, 'distance':True , 'allow':"</>", 'filename':"training words.html"})
 data_info5e = data_with({'n_chars':3000,  'max_len':10,  'max_ahead':4 , 'out_of_range':0.0, 'distance':True , 'allow':"</>", 'filename':"training words.html"})
-
-# test_data_dist   = data_with({'n_chars':3000,  'max_len':10,  'max_ahead':2 , 'distance':True })
-
-def model_with(model_settings):
-    model_info = {'create_fn': create_model_D_, 'name':"default_model",
-                          'dropout':0.0, 'hidden_units':100, 'embedding_size':50,
-                          'loss':keras.losses.categorical_crossentropy,
-                          'mask_zero':True}
-
-    model_info.update(model_settings)
-    return model_info
 
 
 model8_0_info  = model_with({'name':"8_0_next_char_old",        'data_info':data_info0 })
@@ -1564,40 +1610,35 @@ model8_5e_info = model_with({'name':"8_5e_2stage_distance_to_4",        'data_in
 
 
 
-def load_data(model_or_data_info):
-    if (model_or_data_info.get('data_info') is None):
-        data_info = model_or_data_info
-    else:
-        data_info = model_or_data_info['data_info']
+#### Run build process for each model #####
 
-    raw_data, text, coder = get_raw_data(data_info, return_text=True)
-    X, y = get_xy_data(raw_data, coder=coder, data_info=data_info)
-    return X,y, text, coder
+build_model(model8_0_info, create=True)
+build_model(model8_1_info, create=True, epochs = 10)
+build_model(model8_1b_info, create=True)     # Look ahead of 1 - no noise
+build_model(model8_1c_info, create=True)     # Look ahead of 1 - with noise
+build_model(model8_2_info, create=True)
+build_model(model8_2a_info, create=True)
+build_model(model8_2b_info, create=True)
+build_model(model8_2c_info, create=True)     # Look ahead of 2 - with noise of 1
+build_model(model8_2d_info, create=True)     # Look ahead of 2 - with noise & dout
+build_model(model8_2d6_info, create=True)     # Look ahead of 2 - with noise & dout
+build_model(model8_3_info, create=True)
+build_model(model8_4_info, create=True)
+build_model(model8_5_info, create=False, fit=True, epochs=100)
 
-def create_model(model_info, data_only = False, extract=True, create=False, fit=True, epochs=100):
-    if extract | data_only:
-        X, y, text, coder = load_data(model_info)
-        if data_only:
-            return X, y, text
-
-    if create:
-        print("Creating new model {}".format(model_info['name']))
-        model = model_info['create_fn'](model_info)
-    else:
-        print ("Reusing existing model {}".format(model_info['name']))
-        model = model_info['model']
-
-    if fit:
-        model_fit(model, X, y, model_info=model_info, epochs=epochs, batch_size=5)
-        model.evaluate(X, y, batch_size=5)
-
-    #return model, X, y
+build_model(model8_5a_info, create=True)
+build_model(model8_5a_info, create=False, epochs=25)
+build_model(model8_5b_info, create=True, epochs=200)
+build_model(model8_5c_info, create=False, epochs=100)
+build_model(model8_5d_info, create=True, epochs=200)
+build_model(model8_5e_info, create=True, epochs=200)
 
 
 
 
 
-# Reload previous models
+
+##### Reload previous models
 model_load(model8_1_info)
 model_load(model8_2_info)
 model_load(model8_2a_info)
@@ -1608,57 +1649,102 @@ model_load(model8_5a_info)
 model_load(model8_5c_info)
 
 
-create_model(model8_0_info,  create=True)
-create_model(model8_1_info,  create=True, epochs = 10)
-create_model(model8_1b_info, create=True)     # Look ahead of 1 - no noise
-create_model(model8_1c_info, create=True)     # Look ahead of 1 - with noise
-create_model(model8_2_info,  create=True)
-create_model(model8_2a_info, create=True)
-create_model(model8_2b_info, create=True)
-create_model(model8_2c_info, create=True)     # Look ahead of 2 - with noise of 1
-create_model(model8_2d_info, create=True)     # Look ahead of 2 - with noise & dout
-create_model(model8_2d6_info, create=True)     # Look ahead of 2 - with noise & dout
-create_model(model8_3_info,  create=True)
-create_model(model8_4_info,  create=True)
-create_model(model8_5_info,  create=False, fit=True,epochs=100)
 
-create_model(model8_5a_info, create=True)
-create_model(model8_5a_info, create=False, epochs=25)
-create_model(model8_5b_info, create=True, epochs=200)
-create_model(model8_5c_info, create=False, epochs=100)
-create_model(model8_5d_info, create=True, epochs=200)
-create_model(model8_5e_info, create=True, epochs=200)
 
-# Load clean data
-X, y, text, _coder = load_data(model8_1b_info)
-X, y, text, _coder = load_data(model8_2e_info)
-X, y, text, _coder = load_data(test_data_dist)
-X, y, text, _coder = load_data(model8_4_info)
-X, y, text, _coder = load_data(model8_5_info)
-X, y, text, _coder = load_data(model8_5a_info)
-X, y, text, _coder = load_data(model8_5b_info)
-X, y, text, _coder = load_data(model8_5d_info)
-print(text[0:1000])
+
+
+
+##### View charts for saved models  ####
+# Run the model_info above to define model
+
+def prediction_chart(model_info):
+    model_load(model_info) # Set 'model'
+    load_data(model_info)  # Set 'coder'
+    plot_next_letter = lambda ax, text: predict_next_letter(model_info, text, ax, printing=True)
+    myUi.ChartUpdater(plot_Fn = plot_next_letter)
+
+
+
+# Reload previous models
+prediction_chart(model8_1_info)
+prediction_chart(model8_2_info)
+prediction_chart(model8_2a_info)
+prediction_chart(model8_2c_info)
+prediction_chart(model8_4_info)
+prediction_chart(model8_5_info)
+prediction_chart(model8_5a_info)
+prediction_chart(model8_5c_info)
+# => Much more mixed predictions: e.g. after r is not just vowels
+# => Much more mixed predictions: e.g. q is followed by a,e,i as well as u
+
+
+# When using randomised data:
+# - becomes hard to see real patterns through the noise
+
+
+# model8_4_info works well with max_ahead=4, but not using distances, just 1/0
+
+# Can't get actual distance values to work well
+# - Perhaps need to predict tuple (prob, dist) and have a better 2-stage loss function
+
+
+
+# Use with model5
+# Try: "p r e s e r v e"
+# The try from "s" -> i..n..g..l..e
+# t..o..o..t..h
+# m..o..l..a..r
+# t..w..e..n..t..y
+raw_data, coder = get_raw_data(n_chars=3000)
+model5 = model_load("Keep\model_5_2b_next_letter_40Dropout_v165")
+model5 = model_load("Keep\model_5_next_letter_final")
+model_info = (model5, 2, False)
+plot_next_letter = lambda ax, text: predict_next_letter(model_info, text, ax, printing=True, coder=coder)
+myUi.ChartUpdater(plot_Fn = plot_next_letter)
+
+
+
+
+
+
+
+
+
+
+########### Create summary counts for each model #############
+
+def model_summary(model_info):
+    model_load(model_info) # Set 'model'
+    # Load clean data - will need different format of X with 2 or 3 dims depending on model
+    X, y, text, _coder = load_data(model_info)
+    pred_counts(model_info,  X, y, n_top=4, n_find=4, results='s')
+
+
+model_summary(model8_1_info)
+model_summary(model8_2e_info)
+model_summary(model8_4_info)
+model_summary(model8_5_info)
+model_summary(model8_5a_info)
+model_summary(model8_5b_info)
+model_summary(model8_5d_info)
+model_summary(model8_0_info)
+model_summary(model8_1_info)
+model_summary(model8_1b_info)
+model_summary(model8_1c_info)
+model_summary(model8_2_info)
+model_summary(model8_2a_info)
+model_summary(model8_2b_info)
+model_summary(model8_2c_info)
+model_summary(model8_2d_info)
+model_summary(model8_2d6_info)
+model_summary(model8_3_info)
+model_summary(model8_4_info)   # Works quite well
+
 
 pred = predict(model8_5_info, 't', flag=None, max_len=10, printing=True)
 
 
-pred_counts(model8_0_info,  X, y, n_top=4, n_find=4, results='s')
-pred_counts(model8_1_info,  X, y, n_top=4, n_find=4, results='s')
-pred_counts(model8_1b_info, X, y, n_top=4, n_find=4, results='s')
-pred_counts(model8_1c_info, X, y, n_top=4, n_find=4, results='s')
-pred_counts(model8_2_info,  X, y, n_top=4, n_find=4, results='s')
-pred_counts(model8_2a_info, X, y, n_top=4, n_find=4, results='s')
-pred_counts(model8_2b_info, X, y, n_top=4, n_find=4, results='s')
-pred_counts(model8_2c_info, X, y, n_top=4, n_find=4, results='s')
-pred_counts(model8_2d_info, X, y, n_top=4, n_find=4, results='s')
-pred_counts(model8_2d6_info, X, y, n_top=4, n_find=4, results='s')
-pred_counts(model8_3_info,  X, y, n_top=4, n_find=4, results='s')
-pred_counts(model8_4_info,  X, y, n_top=4, n_find=4, results='s')   # Works quite well
-#pred_counts(model8_5_info,  X, y, n_top=4, n_find=4, results='s')
-
-
-
+# Print summaries saved above
 print(model8_1_info['summary'])
 # n_Find         0         1         2         3
 # n_Top
@@ -1757,37 +1843,125 @@ print(model8_2d6_info['summary'])
 
 
 
-plot_next_letter = lambda ax, text: predict_next_letter(model8_1_info, text, ax, printing=True)
-plot_next_letter = lambda ax, text: predict_next_letter(model8_1b_info, text, ax, printing=True)
-plot_next_letter = lambda ax, text: predict_next_letter(model8_1c_info, text, ax, printing=True)
-plot_next_letter = lambda ax, text: predict_next_letter(model8_2_info, text, ax, printing=True)  # Based on 3k
-plot_next_letter = lambda ax, text: predict_next_letter(model8_2a_info, text, ax, printing=True) # Based on 20k
-plot_next_letter = lambda ax, text: predict_next_letter(model8_2b_info, text, ax, printing=True) # Based on 20k
-plot_next_letter = lambda ax, text: predict_next_letter(model8_2c_info, text, ax, printing=True) # Based on 20k
-plot_next_letter = lambda ax, text: predict_next_letter(model8_2d_info, text, ax, printing=True) # Based on 20k
-plot_next_letter = lambda ax, text: predict_next_letter(model8_4_info, text, ax, printing=True)
-plot_next_letter = lambda ax, text: predict_next_letter(model8_5_info, text, ax, printing=True)
-plot_next_letter = lambda ax, text: predict_next_letter(model8_5a_info, text, ax, printing=True, cutoff=100)
-plot_next_letter = lambda ax, text: predict_next_letter(model8_5b_info, text, ax, printing=True)
-plot_next_letter = lambda ax, text: predict_next_letter(model8_5c_info, text, ax, printing=True)
-plot_next_letter = lambda ax, text: predict_next_letter(model8_5d_info, text, ax, printing=True, cutoff=100)
-plot_next_letter = lambda ax, text: predict_next_letter(model8_5e_info, text, ax, printing=True, cutoff=100)
+
+
+
+
+
+
+
+
+
+
+
+#############  Interactively see most likely next letters - earlier models #####################
+
+
+# Set model info to Model, x_dims, normalise (2 if using embeddings)
+model_info = (model1, 3, False)
+model_info = (model1b, 3, False)
+model_info = (model3, 2, False)
+model_info = (model4, 2, False)
+model_info = (model4b, 2, False)
+model_info = (model6, 3, False)
+model_info = (model7, 2, False)
+
+
+
+# Note: you need a coder
+raw_data, coder = get_raw_data(n_chars=3000)
+
+# predict_next_letter(model_info, 'th')
+
+# Use with model5
+# Try: "p r e s e r v e"
+# The try from "s" -> i..n..g..l..e
+# t..o..o..t..h
+# m..o..l..a..r
+# t..w..e..n..t..y
+model5 = model_load("Keep\model_5_next_letter_final")
+model_info = (model5, 2, False)
+plot_next_letter = lambda ax, text: predict_next_letter(model_info, text, ax, printing=True, coder=coder)
 myUi.ChartUpdater(plot_Fn = plot_next_letter)
-# => Much more mixed predictions: e.g. after r is not just vowels
-# => Much more mixed predictions: e.g. q is followed by a,e,i as well as u
 
-
-# When using randomised data:
-# - becomes hard to see real patterns through the noise
-
-
-# model8_4_info works well with max_ahead=4, but not using distances, just 1/0
-
-# Can't get actual distance values to work well
-# - Perhaps need to predict tuple (prob, dist) and have a better 2-stage loss function
+# With model5.2
+# Try: p..r..e..s..i..d..e..n..t
+# Try: r : only followed by vowels
+# can do r..n..a caused by international
+# - xecutions
 
 
 
+model6 = model_load("Keep\model_6_Stateful_next_letter_final")
+model_info = (model6, 3, False)
+plot_next_letter = lambda ax, text: predict_next_letter_stateful(model_info, text, ax, coder=coder)
+myUi.ChartUpdater(plot_Fn = plot_next_letter)
+
+
+
+model7  = model_load("Keep\model_7_Stateful_emb_next_letter_final")
+model_info = (model7, 2, False)
+plot_next_letter = lambda ax, text: predict_next_letter_stateful(model_info, text, ax, printing=True, coder=coder)
+myUi.ChartUpdater(plot_Fn = plot_next_letter)
+
+
+
+
+
+
+# Flag None = category index
+# Flag 1 = prob(vowel) following
+# Flag 2 = prob(space) following
+# N.b. For model5, with all letters, flag 1 is ' ' and 2 is 'a'
+flag = 1
+flag = 2
+flag = None
+
+
+# Prob of next letter
+model5_info = (model5, 2, False)
+r=predict_each(model5_info, "abcdefghijklmnopqrstuvwxyz", '', None)
+
+
+model41 = model_load("Keep\model_4.1_vowel_space_final")
+model41_info = (model41, 2, False)
+# Probability of vowel next
+r=predict_each(model41_info, "abcdefghijklmnopqrstuvwxyz", '', 1)
+r=predict_each(model41_info, "abcdefghijklmnopqrstuvwxyz", 't', 1)
+# Prob of space
+r=predict_each(model41_info, "abcdefghijklmnopqrstuvwxyz", '', 2)
+r=predict_each(model41_info, "abcdefghijklmnopqrstuvwxyz", 't', 2)
+r=predict_each(model41_info, "abcdefghijklmnopqrstuvwxyz", 'th', 2)
+
+
+
+# Prob of v
+model1b = model_load("Keep\model_vowel1b_final")
+model1b_info = (model1b, 3, False)
+r=predict_each(model1b_info, "abcdefghijklmnopqrstuvwxyz", '', 1)
+
+
+model1a = model_load("Keep\model_vowel1a_final")
+model1a_info = (model1a, 3, False)
+r=predict_each(model1a_info, "abcdefghijklmnopqrstuvwxyz", '', 1)
+r=predict_each(model1a_info, "abcdefghijklmnopqrstuvwxyz", '', 2)
+
+
+# Predict prob of vowel (flag=1) after each letter in word
+predict_positions(model41_info, "hello", 1, coder=coder)
+
+predict_positions(model_info, "formatter", 2)
+predict_positions(model_info, "evory")
+predict_positions(model_info, "phoning")
+predict_positions(model_info, "thrashing", flag)
+predict_positions(model_info, "crashing")
+predict_positions(model_info, "shing")
+predict_positions(model_info, "bananaman")
+predict_positions(model_info, "crashing", flag)
+predict_positions(model_info, "england", flag)
+predict_positions(model_info, "ingland", flag)
+predict_positions(model_info, "ingland", flag)
+predict_positions(model_info, "answer", flag)
 
 
 
@@ -1795,7 +1969,7 @@ myUi.ChartUpdater(plot_Fn = plot_next_letter)
 
 
 
-################ Predicting & Evaluating ##################
+################ Predicting & Evaluating - earlier models ##################
 
 # Best model is model5_2
 
@@ -1901,114 +2075,6 @@ plt.show
 
 
 
-
-
-
-# Set model info to Model, x_dims, normalise (2 if using embeddings)
-model_info = (model1, 3, False)
-model_info = (model1b, 3, False)
-
-model_info = (model3, 2, False)
-model_info = (model4, 2, False)
-model_info = (model4b, 2, False)
-model_info = (model52b, 2, False)
-model_info = (model6, 3, False)
-model_info = (model7, 2, False)
-
-
-
-#############  Interactively see most likely next letters #####################
-
-# Note: you need a coder
-raw_data, coder = get_raw_data(n_chars=3000)
-
-# predict_next_letter(model_info, 'th')
-
-# Use with model5
-# Try: "p r e s e r v e"
-# The try from "s" -> i..n..g..l..e
-# t..o..o..t..h
-# m..o..l..a..r
-# t..w..e..n..t..y
-model5 = model_load("Keep\model_5_2b_next_letter_40Dropout_v165")
-model5 = model_load("Keep\model_5_next_letter_final")
-model_info = (model5, 2, False)
-plot_next_letter = lambda ax, text: predict_next_letter(model_info, text, ax, printing=True)
-myUi.ChartUpdater(plot_Fn = plot_next_letter)
-
-# With model5.2
-# Try: p..r..e..s..i..d..e..n..t
-# Try: r : only followed by vowels
-# can do r..n..a caused by international
-# - xecutions
-
-
-
-model6 = model_load("Keep\model_6_Stateful_next_letter_final")
-model_info = (model6, 3, False)
-plot_next_letter = lambda ax, text: predict_next_letter_stateful(model_info, text, ax)
-myUi.ChartUpdater(plot_Fn = plot_next_letter)
-
-model7  = model_load("Keep\model_7_Stateful_emb_next_letter_final")
-model_info = (model7, 2, False)
-plot_next_letter = lambda ax, text: predict_next_letter_stateful(model_info, text, ax, printing=True)
-myUi.ChartUpdater(plot_Fn = plot_next_letter)
-
-
-# Flag None = category index
-# Flag 1 = prob(vowel) following
-# Flag 2 = prob(space) following
-# N.b. For model5, with all letters, flag 1 is ' ' and 2 is 'a'
-flag = 1
-flag = 2
-flag = None
-
-r=predict_each(model_info, "abcdefghijklmnopqrstuvwxyz", '', flag)
-r=predict_each(model_info, "abcdefghijklmnopqrstuvwxyz", 'a', flag)
-
-
-
-predict_each(model_info, "abcdefghijklmnopqrstuvwxyz", '', flag=None)
-predict_each(model_info, "abcdefghijklmnopqrstuvwxyz", 'a')
-predict_each(model_info, "abcdefghijklmnopqrstuvwxyz", 'a', flag)
-predict_each(model_info, "abcdefghijklmnopqrstuvwxyz", 'th', 2)
-predict_each(model_info, "abcdefghijklmnopqrstuvwxyz", 't')
-
-
-
-predict_positions(model_info, "hello", flag)
-predict_positions(model_info, "formatter", 2)
-predict_positions(model_info, "evory")
-predict_positions(model_info, "phoning")
-predict_positions(model_info, "thrashing", flag)
-predict_positions(model_info, "crashing")
-predict_positions(model_info, "shing")
-predict_positions(model_info, "bananaman")
-predict_positions(model_info, "crashing", flag)
-predict_positions(model_info, "england", flag)
-predict_positions(model_info, "ingland", flag)
-predict_positions(model_info, "ingland", flag)
-predict_positions(model_info, "answer", flag)
-
-
-
-
-float_formatter = lambda x: "%.4f" % x
-np.set_printoptions(formatter={'float_kind':float_formatter})
-
-
-
-def setup():
-
-
-    prefix='o'
-    word='abcdef'
-    word='abcdef'
-    text='ok'
-    word='ok'
-    raw_item='k'
-    word=['a', 'b', 'c']
-    flag=None
 
 
 

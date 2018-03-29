@@ -57,3 +57,9 @@ rRaw["CustIx"] = np.vectorize(lambda x: 'c'+str(x))(le.transform(rRaw["CUSTID"])
 
 float_formatter = lambda x: "%.4f" % x
 np.set_printoptions(formatter={'float_kind':float_formatter})
+
+
+
+
+# Extend shape to 3D
+out.shape = a.shape + (ncols,)

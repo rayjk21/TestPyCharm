@@ -4,12 +4,17 @@
     <content url="file://$MODULE_DIR$">
       <excludeFolder url="file://$MODULE_DIR$/.idea" />
       <excludeFolder url="file://$MODULE_DIR$/Data" />
+      <excludeFolder url="file://$MODULE_DIR$/Data/Models/002 RNN vowel/Temp" />
+      <excludeFolder url="file://$MODULE_DIR$/Data/Models/003 RNN Bookings/Temp" />
       <excludeFolder url="file://$MODULE_DIR$/Demo" />
       <excludeFolder url="file://$MODULE_DIR$/Samples" />
       <excludeFolder url="file://$MODULE_DIR$/venv" />
       <excludeFolder url="file://$MODULE_DIR$/venv35" />
     </content>
+    <content url="file://$MODULE_DIR$/Data/Models/001 RNN abc" />
+    <content url="file://$MODULE_DIR$/Data/Models/002 RNN vowel" />
     <content url="file://$MODULE_DIR$/Data/Models/002 RNN vowel/Keep" />
+    <content url="file://$MODULE_DIR$/Data/Models/003 RNN Bookings" />
     <content url="file://$MODULE_DIR$/Data/Sample Data" />
     <orderEntry type="jdk" jdkName="Python 3.5 (TestPyCharm)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
