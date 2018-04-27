@@ -5,7 +5,7 @@ from numpy import argmax
 from sklearn.metrics import confusion_matrix
 import sklearn
 import MyUtils.utils_plot as myPlot
-import MyUtils.utils_explore as myExp
+import aptecoPythonUtilities.utils_explore as myExp
 
 import matplotlib.pyplot as plt
 

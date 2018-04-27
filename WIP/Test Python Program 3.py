@@ -1,14 +1,15 @@
 
 import pandas as pa
 import pip
-pip.main(['install', 'aptecoPythonUtilities'])
+import numpy as np
+#pip.main(['install', 'aptecoPythonUtilities'])
 
-import utils_explore
+import aptecoPythonUtilities as apu
 
 def read():
     print("Starting to read bookings...")
 
-    hRaw = pa.read_csv(r"C:\VS Projects\Numerics\Numerics\Temp.FSharp\Data\Holidays\Bookings for All People.csv")
+    hRaw = pa.read_csv(r"\\aptwarnas1\shareddata\develop\Data\Holidays\Bookings for All People.csv")
 
     print("... read file with {} bookings.".format(len(hRaw)))
 
@@ -17,7 +18,7 @@ def read():
 
 
 def summary(df):
-    utils_explore.overview(df)
+    apu.utils_explore.overview(df)
 
 
 

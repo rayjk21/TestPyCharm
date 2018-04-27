@@ -7,9 +7,13 @@ setup(
     author='Apteco',
     py_modules=['utils_explore'],
     scripts=['aptecoPythonUtilities/utils_explore.py'],
+  #  packages=find_packages(include=['aptecoPythonUtilities', 'aptecoPythonUtilities.*']),
     python_requires='>=3.5.0',
     install_requires=['pandas'],
 )
+
+
+#Need to change setup.py so doesn't install as an EGG!
 
 # To install:
 # - Open command prompt as administrator (right click on Start)

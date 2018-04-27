@@ -17,6 +17,10 @@ df = pd.DataFrame([[1,2], [3,4]], columns=['a', 'b'])
 
 raw = pa.read_csv(r"C:\VS Projects\Numerics\Numerics\Temp.FSharp\Data\Movies\Movies_2m.csv", encoding = "ISO-8859-1")
 
+# Use parse-dates
+raw = pa.read_csv(r"D:\FastStats\PUBLISH\BMK\project\All Transactions.csv", parse_dates=['TransDate'], dayfirst=True)
+# since to_datetime is unreliable with UK/US dates
+# df['TransDate2'] = pa.to_datetime(df['TransDate'])
 
 
 # create a sample of OPs unique values

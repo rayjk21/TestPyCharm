@@ -63,3 +63,17 @@ np.set_printoptions(formatter={'float_kind':float_formatter})
 
 # Extend shape to 3D
 out.shape = a.shape + (ncols,)
+
+
+
+# Concatenating
+lol = [[1,4,5,8,9,10], [2,3,4,7,8,9], [5,10,15]]
+def np2(lol):
+    return np.array([np.array(i) for i in lol])
+
+lol
+np.hstack(lol)
+np.ravel(lol)
+
+ts_ = np2(lol)
+np.hstack(ts_)
