@@ -163,7 +163,7 @@ def rolling_3D(arr3D, window = 2, agg='max'):
 
 def vectorizeA(fn):
     '''
-    Takes a (scalar->scalar) function which is to be applied to each element of an array
+    Takes a (array->array) or (scalar->scalar) function which is to be applied to each element of an array
     Returns a function that can be applied to an array
      - this function applies the given function to each element of the array
      - returning another array of the same shape
@@ -205,24 +205,32 @@ def to_np_arrays(items):
         else:
             return np.array(items)
 
-
-
-
-def samples_of_length(lines, length=10, stride=None):
-    length=5
-    if stride is None: stride = length
+def pad(array_or_arrays, length, padding='post', truncating='pre'):
+    '''
+        Applies keras.preprocissing, but can handle a single or multiple arrays
+    :param array_or_arrays:
+    :param length:
+    :param padding:
+    :param truncating:
+    :return:
+    '''
     from keras.preprocessing.sequence import pad_sequences
+    try:
+        return pad_sequences(array_or_arrays, length, padding='post', truncating=truncating, value=0)
+    except:
+        # There is only 1
+        return np.squeeze(pad([array_or_arrays], length, padding, truncating))
 
-    def get_lengths(lines):
-        f = vectorizeA(lambda line: np.shape(line))
-        lengths = np.squeeze(f(lines))
-        return lengths
 
-    def pad(short):
-        return (np.pad(short, (0, length - len(short)), 'constant'))
+
+
+def samples_of_length(lines, length=10, stride=None, printing=True):
+    if stride is None:
+        stride = length
+    from keras.preprocessing.sequence import pad_sequences
     def pad_shorts(shorts):
         for short in shorts:
-            yield(pad(short))
+            yield(pad(short, length))
     def sample_long(longs):
         for long in longs:
             for start in range(len(long)-length, 0, -stride):
@@ -232,15 +240,25 @@ def samples_of_length(lines, length=10, stride=None):
                     #... could output the unused bit padded with 0s
                    # yield(np.pad(long[0:start], (0,length-start), 'constant'))
                     #.. or output full length, reusing a few items
-                    yield long[0:length]
+                    yield np.array(long[0:length])
     def izip():
         for s,l in zip(iter_short, iter_long):
             yield s
             yield l
+    def get_lengths(lines):
+        f = vectorizeA(lambda line: np.shape(line))
+        lengths = np.squeeze(f(lines))
+        return lengths
 
     lengths = get_lengths(lines)
-    shorties  = lines[lengths<=length]
+    zeros = lines[lengths==0]
+    if printing: print ("Removing {} lines of length 0".format(len(zeros)))
+
+    shorties  = lines[(lengths<=length) & (lengths>0)]
+    if printing: print("Padding {} lines of length <= {}".format(len(shorties), length))
+
     long_ones = lines[lengths>length]
+    if printing: print("Sampling {} lines of length > {}".format(len(long_ones), length))
 
     iter_short = pad_shorts(shorties)
     iter_long  = sample_long(long_ones)
@@ -252,6 +270,10 @@ def samples_of_length(lines, length=10, stride=None):
     return iterLS
 
 
+def remove_zeros(lines, printing=False):
+    if printing: print("Removing zero values")
+    f = vectorizeA(lambda a: a[np.nonzero(a)])
+    return f(lines)
 
 
 ###########################################################################

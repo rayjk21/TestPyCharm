@@ -180,46 +180,7 @@ def shift_line(line):
 
 
 
-def samples_of_length(lines, length=10, stride=None):
-    if stride is None:
-        stride = length
-    from keras.preprocessing.sequence import pad_sequences
-
-    def pad(short):
-        return (np.pad(short, (0, length - len(short)), 'constant'))
-    def pad_shorts(shorts):
-        for short in shorts:
-            yield(pad(short))
-    def sample_long(longs):
-        for long in longs:
-            for start in range(len(long)-length, 0, -stride):
-                yield long[start:start+length]
-                # If not enough left to make another full sample...
-                if (start-stride < 0):
-                    #... could output the unused bit padded with 0s
-                   # yield(np.pad(long[0:start], (0,length-start), 'constant'))
-                    #.. or output full length, reusing a few items
-                    yield np.array(long[0:length])
-    def izip():
-        for s,l in zip(iter_short, iter_long):
-            yield s
-            yield l
-
-    lengths = get_lengths(lines)
-    shorties  = lines[lengths<=length]
-    long_ones = lines[lengths>length]
-
-    iter_short = pad_shorts(shorties)
-    iter_long  = sample_long(long_ones)
-    iterLS = izip()
-
-    #iter_short.__next__()
-    #iter_long.__next__()
-    #iterLS.__next__()
-    return iterLS
-
-
-def get_xy_data(raw_data , data_info=None, n_time=10, remove_zeros=True, start=None):
+def get_xy_data(raw_data , data_info=None, n_time=10, remove_zeros=True, start=None, printing=True):
     # Make start date Now if none is set
    # if start is None: start = pa.Timestamp.now()
    # if type(start) is str: start = pa.Timestamp(start)
@@ -233,18 +194,16 @@ def get_xy_data(raw_data , data_info=None, n_time=10, remove_zeros=True, start=N
     # Find the gaps between the datelines
     lines = raw_data['TransDt'].values
 
-    print("Calculating gaps between transactions")
+    if printing: print("Calculating gaps between transactions")
     f = my_prep.vectorizeA(lambda line: time_line_gaps(line))
     lines = f(lines)
 
     if remove_zeros:
-        print("Removing zero values")
-        f = my_prep.vectorizeA(lambda a: a[np.nonzero(a)])
-        lines = f(lines)
+        lines = my_prep.remove_zeros(lines, printing)
 
 
     # Cut up into samples if longer than length, or pad out with zeros
-    X = np.array(list(samples_of_length(lines, n_time)))
+    X = np.array(list(my_prep.samples_of_length(lines, n_time, printing)))
 
     f = my_prep.vectorizeA(shift_line)
     Y = f(X)
@@ -273,14 +232,17 @@ import keras
 
 
 
-def set_shape(M, dims, label=""):
+def set_shape(M, dims, label="", printing=False):
     m_shape = M.shape
-    m_reshape = [m_shape[0], m_shape[1], 1][0:dims]
+    if (len(m_shape)==1):
+        m_reshape = [1, m_shape[0], 1][0:dims]
+    if (len(m_shape)==2):
+        m_reshape = [m_shape[0], m_shape[1], 1][0:dims]
+
     if (m_shape != m_reshape):
-        print("Reshaping {} from {} to {}".format(label, m_shape, m_reshape))
+        if printing: print("Reshaping {} from {} to {}".format(label, m_shape, m_reshape))
         M = M.reshape(m_reshape)
     return M
-
 
 def create_model_1(model_info=None, n_time=20, hidden_units=10, embedding_size=10, dropout=0.2, mask_zero=True, model_name='Temp_Model_1' ):
     '''
@@ -391,6 +353,55 @@ def model_fit(model_or_model_info, X, Y, epochs, batch_size=8, stateful=False, s
 
 
 
+def predict(Xt, model_info=None, n_time=15, output='last'):
+    '''
+
+    :param Xt:
+    :param model_info:
+    :param n_time:
+    :param output: 'last' or 'full'
+    :return:
+    '''
+    if model_info:
+        model       = model_info.get('model')
+        data_info   = model_info.get('data_info')
+        n_time      = data_info.get('n_time') or n_time
+
+    Xt = my_prep.pad(Xt, n_time)
+    Xt = set_shape(Xt, 3)
+
+    pred = model.predict(Xt, verbose=0)
+    f = np.vectorize(lambda x: round(x))
+    pred = my_prep.remove_zeros(f(pred), printing=False)
+
+    pred = np.squeeze(pred)
+    if (output=='last'):
+        last = my_prep.vectorizeA(lambda line: line[-1])
+        pred = last(pred)
+    return pred
+
+def predict_rank(X, model_info, n=100):
+    Xt = X[0:n]
+    Yt = predict(Xt, model_info)
+    Xs = my_prep.remove_zeros(Xt, printing=False)
+    df = pa.DataFrame({'Timeline':list(Xs), 'Next':Yt })
+    df.sort_values(by='Next', inplace=True, ascending=False)
+    return df[df['Next']>0]
+
+def plot_gaps(gaps):
+    offset = (lambda x: pa.Timestamp.now() - np.timedelta64(np.asscalar(x),'D'))
+    offsetV = my_prep.vectorizeA(offset)
+    offsetVV = my_prep.vectorizeA(offsetV)
+
+    gaps_to_points = my_prep.vectorizeA(lambda gaps: gaps[::-1].cumsum()[::-1])
+    points = gaps_to_points(gaps)
+    times = offsetVV(points)
+    #print(gaps)
+    #print(points)
+    #print(times)
+    time_line_plot(times)
+
+
 
 
 
@@ -408,7 +419,7 @@ def data_with(data_settings):
     return data_info
 
 def model_with(model_settings):
-    model_info = {'create_fn': create_model_1, 'name':"default_model",
+    model_info = {'create_fn': create_model_1, 'model_name':"default_model", 'model_path':model_path,
                   'stateful':False,
                   'dropout':0.0, 'hidden_units':10, 'embedding_size':50,
                   'loss':keras.losses.mse,
@@ -430,28 +441,29 @@ def prep_data(model_or_data_info, load=False):
 
     return X,Y,raw_data
 
-def build_model(model_info, data_only = False, load=False, prep=False, create=False, fit=True, epochs=10):
+def build_model(model_info, data_only = False, load=False, prep=True, create=False, fit=True, epochs=10):
     if load | prep | data_only:
         X, Y, raw_data = prep_data(model_info, load)
         if data_only:
             return X, Y, raw_data
 
+
     if create:
-        print("Creating new model {}".format(model_info['name']))
+        print("Creating new model {}".format(model_info['model_name']))
         model = model_info['create_fn'](model_info)
     else:
-        print ("Reusing existing model {}".format(model_info['name']))
+        print ("Reusing existing model {}".format(model_info['model_name']))
         model = model_info['model']
 
     if fit:
         model_fit(model_info, X, Y, epochs=epochs, batch_size=5)
-        model.evaluate(X, Y, batch_size=5)
+        #model.evaluate(X, Y, batch_size=5)
 
 
 data_info1 = data_with({'n_time':15})
 
-model_info1 = model_with({'create_fn': create_model_1, 'model_name':"model1", 'data_info':data_info1,
-                          'batch_size':50})
+model_info1 = model_with({'create_fn' : create_model_1, 'model_name':"model1", 'data_info':data_info1, 'batch_size':50})
+model_info1b = model_with({'create_fn': create_model_1, 'model_name':"model1b", 'data_info':data_info1, 'batch_size':50})
 
 
 
@@ -460,19 +472,48 @@ X,Y,raw_data = prep_data(model_info1)
 checkXY(X, Y)
 get_lengths(X, plot=True)
 
-create_model_1(model_info1)
-model_fit(model_info1, X, Y, epochs=3, batch_size=50)
-
-build_model(model_info1, prep=False, create=False, fit=True)
 
 
 
+build_model(model_info1b, prep=True, create=True, fit=True, epochs=10)
 
 
+my_nn.model_load(model_info1, suffix='final')
 
 
 
 
+
+
+Xt = [
+    [1,2,3],
+    [100,100,100],
+    [1,2,3,100,200],
+    [10,20,30,40,50,60]
+]
+
+
+pred = predict_rank(X, model_info1, n=100)
+print(pred)
+
+low  = pred['Timeline'][-20:-10].values
+hi  = pred['Timeline'][0:10].values
+hi_low = np.hstack([hi, low])
+plot_gaps(hi_low)
+
+
+
+
+
+
+
+
+
+
+
+
+
+##############################################################################
 
 
 
@@ -492,35 +533,6 @@ build_model(model_info1, prep=False, create=False, fit=True)
 
 
 ##############################################################################
-
-lines = my_prep.to_np_arrays([[1,2,3,4,5,6,7,8], [11,12,13,14,15], [21,22]])
-samples = list(samples_of_length(lines, 3))
-for s in samples: print (s)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-##############################################################################
-
-
-# Embeddings
-prodEmb = my_emb.CreateFromDf(df,'CustId', "Product")
-prodEmb.plotAll()
-
 
 
 

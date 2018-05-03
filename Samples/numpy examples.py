@@ -77,3 +77,24 @@ np.ravel(lol)
 
 ts_ = np2(lol)
 np.hstack(ts_)
+
+
+
+
+# Vectorising
+
+# Lambda gets applied to each element in array 1,2,3
+offset = (lambda x: 1000-x)
+offset(5)
+offsetV = my_prep.vectorizeA(offset)
+offsetV(np.array([1,2,3]))
+
+# In principle this lambda works...
+offset = (lambda x: pa.Timestamp.now() - np.timedelta64(x,'D'))
+offset(5)
+
+# But when vectorised the 'x' is actually a np.array of size 1
+offset = (lambda x: pa.Timestamp.now() - np.timedelta64(np.asscalar(x),'D'))
+offsetV = my_prep.vectorizeA(offset)
+offsetV(np.array([1,2,3]))
+

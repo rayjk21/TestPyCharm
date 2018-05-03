@@ -20,6 +20,15 @@ import time
 from imblearn.over_sampling import SMOTE
 from sklearn.model_selection import train_test_split
 
+
+
+
+
+
+
+
+
+
 def setBins(nBins, xBins=None, yBins=None):
     if xBins is None: xBins = nBins
     if yBins is None: yBins = nBins
@@ -336,7 +345,7 @@ class Metrics(keras.callbacks.Callback):
         logs.update({'MyPrecision':precision})
 
 
-def model_load(model_name_or_info, model_path = "C:\Temp", sub_folder = None, suffix=None):
+def model_load(model_name_or_info, model_path = "C:\Temp", sub_folder = None, suffix='final'):
     if (type(model_name_or_info) is dict):
         model_path = model_name_or_info['model_path']
         model_name = model_name_or_info['model_name']
