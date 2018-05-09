@@ -198,12 +198,14 @@ def showHideAxes(plt, hide=False):
         ax.set_xticklabels([])
 
 
-def plot_scatter(points, labels, xyLbls = ["X","Y"] ,color='Blue', size=20, cmap=None, fSize=10, hideAxes=False, show_axisLbls=True, xRange=None, yRange=None):
+def plot_scatter(points, labels, xyLbls=None, color='Blue', size=20, cmap=None, fSize=10, hideAxes=False, show_axisLbls=True, xRange=None, yRange=None):
     """
         colour can be an array of values in which case the colour map is used
         Otherwise the fixed colour is used
     """
-    if cmap == None:cmap=matplotlib.cm.OrRd 
+    if xyLbls is None:
+        xyLbls = ["X", "Y"]
+    if cmap == None:cmap=matplotlib.cm.OrRd
 
     plt.scatter(points[:, 0], points[:, 1], c=color, s=size, cmap=cmap)
 
@@ -234,6 +236,11 @@ def scatterDf(df, xyCols, lblCol=None, color='Blue', size=20, cmap=None, fSize=1
 
 
 def heatMap(arr, xCol="X", yCol="Y", show_legend=True, hideAxes=False, show_axisName = True, show_axisLbls = True, cmap=None, show=True, diverge=False):
+    # arr = dfX.loc[flag0[p]]
+    # arr.columns
+    if (type(arr) is pa.DataFrame):
+        arr = arr.as_matrix()
+
     ras =  arr.astype('float')
     #ras =  df.as_matrix().astype('float')  # Now pass as array
     vmin = np.min(ras)

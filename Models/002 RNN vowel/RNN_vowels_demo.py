@@ -1,15 +1,26 @@
 
-from MyUtils.RNN_vowels_base import *
+import MyUtils.RNN_vowels_base as m
+# from MyUtils.RNN_vowels_base import *
 
 
 
-_EPSILON = K.epsilon()
-def loss_2_stage_K(y_true, y_pred):
+def data_with(data_settings):
+    data_info = {'n_chars': None, 'max_len': 10,
+                    'x_dims': 2, 'y_dims': 2,
+                    'flags': None, 'max_ahead': 1, 'distance':False,
+                    'normalise': False, 'randomise': None
+                    }
+    data_info.update(data_settings)
+    return data_info
 
-    print("Using loss 2 stage")
-    loss = K.mean(loss_2_stage_K_(y_true, y_pred))
-    #loss2 = tf.where(tf.is_nan(loss), tf.constant(99.0), tf.constant(11.0))
-    return loss
+def model_with(model_settings):
+    model_info = {'create_fn': m.create_model_D_, 'name':"default_model",
+                          'dropout':0.0, 'hidden_units':100, 'embedding_size':50,
+                          'loss':m.keras.losses.categorical_crossentropy,
+                          'mask_zero':True}
+
+    model_info.update(model_settings)
+    return model_info
 
 
 
@@ -21,7 +32,7 @@ data_info2c = data_with({'n_chars':20000, 'max_len':15,  'max_ahead':2, 'randomi
 data_info2d = data_with({'n_chars':20000, 'max_len':15,  'max_ahead':2, 'randomise':(0.5, 1)})
 data_info5c = data_with({'n_chars':3000,  'max_len':10,  'max_ahead':2 , 'out_of_range':0.0, 'distance':True , 'allow':"</>", 'filename':"training words.html"})
 
-model8_1_info  = model_with({'name':"8_1_next_char_1",          'data_info':data_info1,    'loss':loss_2_stage_K})
+model8_1_info  = model_with({'name':"8_1_next_char_1",          'data_info':data_info1,    'loss':m.loss_2_stage_K})
 model8_2_info  = model_with({'name':"8_2_next_char_2",          'data_info':data_info2 })
 model8_2a_info = model_with({'name':"8_2a_next_char_2_20k",     'data_info':data_info2a})
 model8_2b_info = model_with({'name':"8_2a_next_char_3_rand20k", 'data_info':data_info2b})
@@ -34,18 +45,30 @@ print(model8_2c_info['data_info'])
 
 
 # Raw Data
-print(read_file(n=3000))
+print(m.read_file(n=3000))
+
+
+
+#################  Demo - build model #####################
+
+model9_info = model_with({'name':"9_demo", 'data_info':data_info1,
+                          'hidden_units': 50, 'dropout':0.2, 'embedding_size':50
+                           })
+
+
+m.build_model(model9_info, extract=True, create=True, fit=True, epochs=50)
 
 
 ################### Predict next letter ahead ########################
 
 
 def prediction_chart(model_info):
-    model_load(model_info) # Set 'model'
-    load_data(model_info)  # Set 'coder'
-    plot_next_letter = lambda ax, text: predict_next_letter(model_info, text, ax, printing=True)
-    myUi.ChartUpdater(plot_Fn = plot_next_letter)
+    m.model_load(model_info) # Set 'model'
+    m.load_data(model_info)  # Set 'coder'
+    plot_next_letter = lambda ax, text: m.predict_next_letter(model_info, text, ax, printing=True)
+    m.myUi.ChartUpdater(plot_Fn = plot_next_letter)
 
+prediction_chart(model9_info)
 
 # Based on predicting just 1 ahead
 prediction_chart(model8_1_info)
@@ -71,10 +94,10 @@ prediction_chart(model8_2c_info)
 ########### Create summary counts for each model #############
 
 def model_summary(model_info):
-    model_load(model_info) # Set 'model'
+    m.model_load(model_info) # Set 'model'
     # Load clean data - will need different format of X with 2 or 3 dims depending on model
-    X, y, text, _coder = load_data(model_info)
-    pred_counts(model_info,  X, y, n_top=4, n_find=4, results='s')
+    X, y, text, _coder = m.load_data(model_info)
+    m.pred_counts(model_info,  X, y, n_top=4, n_find=4, results='s')
 
 
 model_summary(model8_1_info)
@@ -107,4 +130,7 @@ print(model8_2c_info['summary'])
 # 0       0.271573  0.070701  0.045065  0.032318
 # 1       0.113728  0.054021  0.038904  0.026300
 # 2       0.088708  0.045918  0.036203  0.025494
+
+
+
 

@@ -6,7 +6,7 @@ import keras.preprocessing.sequence as K_prep_seq
 import matplotlib.pyplot as plt
 
 
-def groupArrays(df, byVar, ofVar, presorted=True):
+def groupArraysOLD(df, byVar, ofVar, presorted=True):
    # byVar, ofVar = ('CustId', 'TransDt')
     cols = df[[byVar,ofVar]]
     if presorted:
@@ -22,13 +22,46 @@ def groupArrays(df, byVar, ofVar, presorted=True):
 
 
 
+
+def toGroupsDf(df, byVar, ofVar, presorted=False, asNpArrays=False):
+    # df = hSamp
+   # byVar, ofVar = ('Person URN', 'Destination')
+   # byVar, ofVar = ('CustId', 'TransDt')
+    cols = df[[byVar,ofVar]]
+
+    if presorted:
+        keys,values=cols.values.T
+    else:
+        keys,values=cols.sort_values(byVar).values.T
+
+    ukeys,index=np.unique(keys,True)
+    arrays=np.split(values,index[1:])
+
+    if asNpArrays:
+        dfGroups=pa.DataFrame({byVar:ukeys, ofVar:arrays})
+    else:
+        values = [list(a) for a in arrays]
+        dfGroups=pa.DataFrame({byVar:ukeys, ofVar:values})
+
+    dfGroups.set_index(byVar, inplace=True)
+
+    return dfGroups
+
+
+def toGroups(df, byVar, ofVar, presorted=False):
+    dfGroups = toGroupsDf(df, byVar, ofVar, presorted)
+    arrays = dfGroups.values
+    # For some reason each value in the df gets wrapped in an array - so becomes a single item array
+    return [a[0] for a in arrays]
+
+
+
 def xPerY(df, ofVar, byVar, renameTo=None, sort=True):
     per = df[[ofVar, byVar]].drop_duplicates().groupby(byVar).agg({ofVar:['count']})
     if renameTo==None: renameTo = "{} Per {}".format(ofVar, byVar)
     per.columns=[renameTo]
     if sort: per = per.sort_values(by=renameTo, ascending=False)
     return per[renameTo]
-
 
 
 
@@ -39,7 +72,10 @@ def freq_hist(df, column, range=None):
     :param range:  range=[1,100]
     :return:
     '''
-    df[column].value_counts().hist(range=range)
+    # This now seems to plot the freq values along the x-axis !!
+    #df[column].value_counts().hist(range=range)
+
+    df[column].value_counts().plot(range=range)
     plt.show()
 
 def freq_cut(df, column, min, max, show=True):

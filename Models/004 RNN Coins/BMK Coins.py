@@ -56,7 +56,7 @@ def get_raw_data(data_info=None):
 
 
     # Group by cust
-    date_lines = my_prep.groupArrays(df, 'CustId', 'TransDt')
+    date_lines = my_prep.toGroupsDf(df, 'CustId', 'TransDt')
     return date_lines
 
 

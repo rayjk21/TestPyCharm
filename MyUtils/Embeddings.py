@@ -11,15 +11,16 @@ import MyUtils.utils_prep as MyPrep
 
 
 
-def CreateFromArrays(arrays, ofVar = "Item"): 
-    model = Word2Vec(arrays, min_count=1)
+def CreateFromLists(lists, ofVar = "Item"):
+    model = Word2Vec(lists, min_count=1)
     return Embeddings(model, ofVar)
+
 
 def CreateFromDf(df, byVar, ofVar): 
     cols = df[[byVar, ofVar]]
-    gps = MyPrep.groupArrays(cols, byVar, ofVar)
-    arrays = gps[ofVar].values
-    return CreateFromArrays(arrays, ofVar)
+    gps = MyPrep.toGroups(cols, byVar, ofVar)
+
+    return CreateFromLists(gps, ofVar)
 
 
 

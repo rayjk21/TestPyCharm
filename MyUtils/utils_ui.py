@@ -2,6 +2,7 @@
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import numpy as np
 import matplotlib.pyplot as plt
+# noinspection PyCompatibility
 import tkinter as tk
 
 import time

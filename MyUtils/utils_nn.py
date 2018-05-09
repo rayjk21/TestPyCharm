@@ -88,6 +88,8 @@ def reshapeAndSplitData(X, y, reshape=None, yCat = True, printing=True):
 
     return X_train, X_valid, X_test, y_train, y_valid, y_test
 
+
+# noinspection PyDefaultArgument
 def splitData(X, y, split=[80, 20], printing=True):
     '''
     :param X:
@@ -228,6 +230,7 @@ def find_max_input(model, layer_name, units, img_shape = None, show=False, maxTr
         def tryToConverge(n):
             print ("***** Try number {} *****".format(n))
             # we start from a gray image with some random noise
+            # noinspection PyCompatibility
             input_img_data = np.random.random((1, *input_shape))
             # we run gradient ascent for 20 steps
             for i in range(nIterations):

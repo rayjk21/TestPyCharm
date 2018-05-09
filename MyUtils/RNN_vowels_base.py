@@ -247,25 +247,6 @@ def createY_dists(raw_data, coder, max_len = 10, max_ahead = 1, out_of_range=0, 
     flagged = encode_raw_data(coder, raw_data[0:n_obs], max_len=max_len) + 1
     padded  = K_prep_seq.pad_sequences(flagged, maxlen = max_len, value=0, padding='post')
 
-    def get_dists1(A):
-        '''
-            First try - retunrs df that needs to be transposed
-        :return:
-        '''
-        obs_ix = np.arange(0, n_obs)
-        def dist(p, d):
-            pfx  = A[:, 0:p+1]
-            cats = A[:, p+d]     # Distance d away
-            dists = pa.DataFrame(np.stack([obs_ix, np.full(n_obs,d), cats]).T)
-            dists.columns=["Ix","Dist","Cat"]
-            return dists
-
-        df = pa.DataFrame()
-        for d in range(p+1, n_time):
-            df = df.append(dist(p, d))
-
-        df = df.sort_values(by=['Ix', 'Dist'])
-        return df
 
     def get_dists2(A, start_pos=0):
         '''
@@ -583,7 +564,7 @@ def model_load(model_name_or_info):
     model.name = model_name
     print("Loaded model {}".format(model.name))
 
-    if (type(model_name_or_info) is dict):
+    if type(model_name_or_info) is dict:
         model_name_or_info['model'] = model
 
     return model
@@ -887,7 +868,7 @@ def predict(model_info_or_tuple, word, flag=1, max_len=10, printing=False, coder
     '''
     raw_obs = list(word)
 
-    if (type(model_info_or_tuple) is dict):
+    if type(model_info_or_tuple) is dict:
         model, x_dims, normalise = (model_info_or_tuple['model'], model_info_or_tuple['data_info']['x_dims'], model_info_or_tuple['data_info']['normalise'])
         coder = model_info_or_tuple['data_info'].get('coder')
         max_len = model_info_or_tuple['data_info']['max_len']
@@ -1351,23 +1332,6 @@ def model_evaluate(model, X, y, stateful = False, mask_zero=True, printing=False
 
 ####################   Using ModelInfo to specify models   ##################################
 
-def data_with(data_settings):
-    data_info = {'n_chars': None, 'max_len': 10,
-                    'x_dims': 2, 'y_dims': 2,
-                    'flags': None, 'max_ahead': 1, 'distance':False,
-                    'normalise': False, 'randomise': None
-                    }
-    data_info.update(data_settings)
-    return data_info
-
-def model_with(model_settings):
-    model_info = {'create_fn': create_model_D_, 'name':"default_model",
-                          'dropout':0.0, 'hidden_units':100, 'embedding_size':50,
-                          'loss':keras.losses.categorical_crossentropy,
-                          'mask_zero':True}
-
-    model_info.update(model_settings)
-    return model_info
 
 def load_data(model_or_data_info):
     if (model_or_data_info.get('data_info') is None):
