@@ -19,7 +19,7 @@ pa.set_option('expand_frame_repr', False)
 # Retail
 ###################################################################################
 
-rRaw = pa.read_csv(r"C:\VS Projects\Numerics\Numerics\Temp.FSharp\Data\Retail\All Cust Items Data Grid.txt", sep='\t')
+rRaw = pa.read_csv(r"S:\develop\Data\Retail\All Cust Items Data Grid.txt", sep='\t')
 rRaw["Department"].astype(str)
 rRaw['Product Group'].astype(str)
 rRaw['Product Group'] = "_" + rRaw['Product Group'].astype(str)
@@ -150,7 +150,7 @@ df = dfFeature
 
 #################### Preprocess data  2- standardise the inputs as Pct or normalised
 
-def pre_process_data_OLD(df, byVar, dims=["F3", "F4"], nBins=4, type='Pct', ofVar=None, labels=False, offset='Min'):
+def pre_process_data_OLD(df, byVar, dims=None, nBins=4, type='Pct', ofVar=None, labels=False, offset='Min'):
     """
     Preprocess data for Neural Network
         - Removes the TargetProducts
@@ -162,6 +162,8 @@ def pre_process_data_OLD(df, byVar, dims=["F3", "F4"], nBins=4, type='Pct', ofVa
             Pandas dataframe
             Returns 2D array (shape nBins,nBins) for each byVar
     """
+    if dims is None:
+        dims = ["F3", "F4"]
     xCol, yCol = dims
     xLabels, yLabels = None, None
     xCuts = pa.cut(df[xCol], bins=nBins, retbins=True)[1]
@@ -267,7 +269,7 @@ def pre_process_data_OLD(df, byVar, dims=["F3", "F4"], nBins=4, type='Pct', ofVa
     return dfX, dfY
 
 
-def pre_process_data(df, byVar, dims=["F3", "F4"], nBins=4, type='Count', ofVar=None, how='Index', omitTarget=True) -> pa.DataFrame:
+def pre_process_data(df, byVar, dims=None, nBins=4, type='Count', ofVar=None, how='Index', omitTarget=True) -> pa.DataFrame:
     """
     Preprocess data for Neural Network
         - Removes the TargetProducts
@@ -284,6 +286,9 @@ def pre_process_data(df, byVar, dims=["F3", "F4"], nBins=4, type='Count', ofVar=
             Pandas dataframe
             Returns 2D array (shape nBins,nBins) for each byVar
     """
+
+    if dims is None:
+        dims = ["F3", "F4"]
 
     def createCuts(df, dimName, cutName, nBins=4, showBands=False):
         cuts = pa.cut(df[dimName], bins=nBins, retbins=True)[1]
@@ -442,6 +447,7 @@ def pre_process_data(df, byVar, dims=["F3", "F4"], nBins=4, type='Count', ofVar=
     return dfX, dfY
 
 dfX, dfY = pre_process_data(df, 'CustIx', nBins=5, type='Count', how='Index')
+# noinspection PyRedeclaration,PyRedeclaration
 dfX, dfY = pre_process_data(df, 'CustIx', nBins=5, type='Count', how='MinRng')
 
 myExp.overview(dfX)
@@ -453,13 +459,18 @@ myExp.overview(dfY)
 
 ###################### Plot individual member who is/isnt in the target
 
-def plot1(mId, dfX, df, lbl, dims=["F3", "F4"], colorVar=None, highlight=[], show=True, hideAxes=False, r=1, c=2, p1=1, p2=2):
+def plot1(mId, dfX, df, lbl, dims=None, colorVar=None, highlight=None, show=True, hideAxes=False, r=1, c=2, p1=1, p2=2):
     """
         mId = 'c1'
         df  = Data for each member for each Title
         dfX = X values for modelling, summarised for each member over titles
         color: Specify item level variable for use as thematic (or None for default)
     """
+
+    if dims is None:
+        dims = ["F3", "F4"]
+    if highlight is None:
+        highlight = []
 
     def highlightPoints():
         tData = mData[mData[lbl].isin(highlight)]
@@ -490,7 +501,9 @@ def plot1(mId, dfX, df, lbl, dims=["F3", "F4"], colorVar=None, highlight=[], sho
 
     if show: plt.show()
 
-def plotN(custs, highlight=[]):
+def plotN(custs, highlight=None):
+    if highlight is None:
+        highlight = []
     n=len(custs)
     for i,cust in enumerate(custs):
         print("{} {}".format(i,cust))
@@ -516,7 +529,9 @@ def plotCompare(dfX, flag0, flag1, nGrid=3, showTitle=False):
 
 
 dfXi, dfY = pre_process_data(df, 'CustIx', nBins=5, type='Count', how='Index')
+# noinspection PyRedeclaration
 dfXmr, dfY = pre_process_data(df, 'CustIx', nBins=5, type='Count', how='MinRng')
+# noinspection PyRedeclaration
 dfXm, dfY = pre_process_data(df, 'CustIx', nBins=5, type='Count', how='Max')
 
 
@@ -657,7 +672,9 @@ def ae3(nBins=10, xBins=None, yBins=None, encode_size=25):
 
     return encoder, autoencoder
 
-def ae4(input_size, encode_size, layer_sizes=[256, 128]):
+def ae4(input_size, encode_size, layer_sizes=None):
+    if layer_sizes is None:
+        layer_sizes = [256, 128]
     input_shape = (1,1,input_size)
     input = Input(shape=(input_shape))
 
@@ -678,7 +695,9 @@ def ae4(input_size, encode_size, layer_sizes=[256, 128]):
 
     return encoder, autoencoder
 
-def ae4b(input_size, encode_size, layer_sizes=[256, 128], pen = None, loss=keras.losses.mse):
+def ae4b(input_size, encode_size, layer_sizes=None, pen = None, loss=keras.losses.mse):
+    if layer_sizes is None:
+        layer_sizes = [256, 128]
     input_shape = (input_size,)
     input = Input(shape=(input_shape))
 
@@ -814,7 +833,9 @@ def Manual():
 n = 10
 h=[]
 dfX, dfY = pre_process_data(df, 'CustIx', nBins=n, dims=["F3", "F4"], type='Count', how='Index')
+# noinspection PyRedeclaration,PyRedeclaration
 dfX, dfY = pre_process_data(df, 'CustIx', nBins=n, dims=["F3", "F4"], type='Count', how='MinRng')
+# noinspection PyRedeclaration,PyRedeclaration
 dfX, dfY = pre_process_data(df, 'CustIx', nBins=n, dims=["F3", "F4"], type='Count', how='Max')
 X_train1, X_valid1, X_test1, y_train1, y_valid1, y_test1 = myNn.reshapeAndSplitData(dfX, dfY, reshape=[])
 model1 = modelMlp(nBins=n)
@@ -973,6 +994,7 @@ n = 8
 h=[]
 xBins, yBins = (n*2, n)
 dfX12, dfY = pre_process_data(df, 'CustIx', nBins=n, type='Count', how='Max', dims=["F1", "F2"], omitTarget=True)
+# noinspection PyRedeclaration
 dfX34, dfY = pre_process_data(df, 'CustIx', nBins=n, type='Count', how='Max', dims=["F3", "F4"], omitTarget=True)
 dfX = pa.concat([dfX12, dfX34], axis = 1)
 X_train4, X_valid4, X_test4, y_train4, y_valid4, y_test4 = myNn.reshapeAndSplitData(dfX, dfY, reshape=[])
@@ -1018,8 +1040,10 @@ n = 10
 h=[]
 xBins, yBins = n*2, n
 enc_size = 100
+# noinspection PyRedeclaration,PyRedeclaration
 xBins, yBins = n*2, n
 dfX12, dfY = pre_process_data(df, 'CustIx', nBins=n, type='Count', how='Max', dims=["F1", "F2"])
+# noinspection PyRedeclaration
 dfX34, dfY = pre_process_data(df, 'CustIx', nBins=n, type='Count', how='Max', dims=["F3", "F4"])
 
 
@@ -1089,10 +1113,12 @@ n = 10
 h=[]
 xBins, yBins = n*2, n
 enc_size = 100
+# noinspection PyRedeclaration,PyRedeclaration
 xBins, yBins = n*2, n
 #dfX12, dfY = pre_process_data(df, 'CustIx', nBins=n, type='Count', how='Max', dims=["F1", "F2"])
 #dfX34, dfY = pre_process_data(df, 'CustIx', nBins=n, type='Count', how='Max', dims=["F3", "F4"])
 dfX12, dfY = pre_process_data_OLD(df, 'CustIx', nBins=n, type='Pct', dims=["F1", "F2"])
+# noinspection PyRedeclaration
 dfX34, dfY = pre_process_data_OLD(df, 'CustIx', nBins=n, type='Pct', dims=["F3", "F4"])
 
 dfX = pa.concat([dfX12, dfX34], axis = 1)

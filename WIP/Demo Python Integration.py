@@ -7,14 +7,25 @@ import numpy as np
 import aptecoPythonUtilities as apu
 import sys
 
+def inputFile() :  return sys.argv[1]
+
 
 
 def read():
-    print("Starting to read bookings...")
+    print("Starting to read input data...")
 
-    hRaw = pa.read_csv(r"\\aptwarnas1\shareddata\develop\Data\Holidays\Bookings for All People.csv")
+    try:
+        print("Trying to read data as comma separated...")
+        hRaw = pa.read_csv(inputFile())
+    except:
+        print ("Unable to read as comma separated.")
+        try:
+            print ("Trying to read as tab separated.")
+            hRaw = pa.read_csv(inputFile(), sep='\t')
+        except:
+            print ("Unable to read as tab separated.")
 
-    print("... read file with {} bookings.".format(len(hRaw)))
+    print("... read file with {} records.".format(len(hRaw)))
 
     return hRaw
 

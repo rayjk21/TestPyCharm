@@ -1,3 +1,4 @@
+
 import numpy as np
 import pandas as pa
 import seaborn as sns
@@ -10,7 +11,7 @@ import pydot
 import graphviz
 import itertools
 import more_itertools
-import MyUtils.utils_explore as MyExp
+import aptecoPythonUtilities.utils_explore as MyExp
 import MyUtils.utils_prep as MyPrep
 import MyUtils.utils_plot as MyPlot
 import MyUtils.utils_nn as MyMod
@@ -23,19 +24,39 @@ pa.set_option('max_rows', 11)
 pa.set_option('expand_frame_repr', False)
 
 
+
+
+##########################################################################
+
+##########################################################################
+sentences = [['this', 'is', 'the', 'first', 'sentence', 'for', 'word2vec'],
+			['this', 'is', 'the', 'second', 'sentence'],
+			['yet', 'another', 'sentence'],
+			['one', 'more', 'sentence'],
+			['and', 'the', 'final', 'sentence']]
+
+wordEmb = Emb.CreateFromLists(sentences)
+wordEmb.plotAll()
+
+
+arrays = MyPrep.to_np_arrays(sentences)
+lists = [list(a) for a in arrays]
+wordEmb = Emb.CreateFromLists(lists)
+wordEmb.plotAll()
+
+
+
 ###################################################################################
 # Holidays
 ###################################################################################
 
-hRaw = pa.read_csv(r"C:\VS Projects\Numerics\Numerics\Temp.FSharp\Data\Holidays\Bookings for All People.csv")
+hRaw = pa.read_csv(r"S:\develop\Data\Holidays\Bookings for All People.csv")
 MyExp.overview(hRaw)
 MyExp.detail(hRaw)
 
+
 destEmb = Emb.CreateFromDf(hRaw,'Person URN', "Destination")
 destEmb.plotAll()
-
-destEmb.df
-
 
 
 
@@ -44,26 +65,31 @@ destEmb.df
 # Retail
 ###################################################################################
 
-rRaw = pa.read_csv(r"C:\VS Projects\Numerics\Numerics\Temp.FSharp\Data\Retail\All Cust Items Data Grid.txt", sep='\t')
+rRaw = pa.read_csv(r"S:\develop\Data\Retail\All Cust Items Data Grid.txt", sep='\t')
 rRaw["Department"].astype(str)
 rRaw["Product Group"].astype(str)
-rRaw['Product'] = "_" + rRaw['Product Group'].astype(str)
+rRaw['ProductGroup'] = "_" + rRaw['Product Group'].astype(str)
 
+MyExp.overview(rRaw)
 
 # Create features
 deptEmb = Emb.CreateFromDf (rRaw, 'CUSTID', 'Department')
 deptEmb.plotAll()
-pgpEmb = Emb.CreateFromDf (rRaw, 'CUSTID', 'Product')
+pgpEmb = Emb.CreateFromDf (rRaw, 'CUSTID', 'ProductGroup')
+pgpEmb.plotAll()
 
-
-
+prdEmb = Emb.CreateFromDf (rRaw, 'CUSTID', 'PRODUCT')
+prdEmb.plotAll()
 
 # Add Dept & Cust lookups
-productToDept = rRaw.filter(['Product', 'Department']).drop_duplicates()
-pgpEmb.addLookup ("Department", productToDept)
+pgpToDept = rRaw.filter(['ProductGroup', 'Department']).drop_duplicates()
+pgpEmb.addLookup ("Department", pgpToDept)
 
-custLu = rRaw[['CUSTID', 'Product']].drop_duplicates()
-pgpEmb.addLookup ("CUSTID", custLu)
+pgpToCust = rRaw[['CUSTID', 'ProductGroup']].drop_duplicates()
+pgpEmb.addLookup ("CUSTID", pgpToCust)
+
+prdToCust = rRaw[['CUSTID', 'PRODUCT']].drop_duplicates()
+prdEmb.addLookup ("CUSTID", prdToCust)
 
 
 
@@ -73,19 +99,20 @@ uCust = rRaw["CUSTID"].value_counts().where(lambda x: (x>10) & (x<100)).dropna()
 uDepts = list(rRaw['Department'].drop_duplicates())
 
 
-pgpEmb.dispGroup("CUSTID", "1140000006790")
 pgpEmb.dispGroup("CUSTID", "2270000028346")
+prdEmb.dispGroup("CUSTID", "2270000028346")
+
 pgpEmb.dispGroup("CUSTID", "1290000013483")
+prdEmb.dispGroup("CUSTID", "1290000013483")
 
-
-
+pgpEmb.dispGroup("CUSTID", "1140000006790")
 
 
 ###################################################################################
 # Movies
 ###################################################################################
 
-mRaw = pa.read_csv(r"C:\VS Projects\Numerics\Numerics\Temp.FSharp\Data\Movies\Movies_2m.csv", encoding = "ISO-8859-1")
+mRaw = pa.read_csv(r"S:\develop\Data\Movies\Movies_2m.csv", encoding = "ISO-8859-1")
 MyExp.overview(mRaw)
 MyExp.detail(mRaw)
 
@@ -117,7 +144,20 @@ movieEmb = Emb.CreateFromDf(topVol, 'Member ID', 'Title')
 #### Visualise some films 
 f12, f34 = ["F1", "F2"], ["F3", "F4"]
 
-def genrePlot(genre, dims=["F1", "F2"], highlight=None):
+def genrePlot(genre, dims=None, highlight=None):
+    """
+    
+    Args:
+        genre:
+        dims:
+        highlight:
+
+    Returns:
+
+    """
+    if dims is None:
+        dims = ["F1", "F2"]
+
     def inGenre(df, genre):
         dGenres = df["Genre"]
         getGenre = lambda multi : multi.split("|")
@@ -234,7 +274,7 @@ from sklearn.metrics import confusion_matrix, classification_report
 
 
 # Preprocess data for Neural Network - standardise the inputs as Pct or normalised
-def preProcessData(df, nBins=4, type='Norm', dims=["F3", "F4"]):
+def preProcessData(df, nBins=4, type='Norm', dims=None):
     """
     Preprocess data for Neural Network 
         nBins = Number of bins for each of the dimensions
@@ -242,7 +282,10 @@ def preProcessData(df, nBins=4, type='Norm', dims=["F3", "F4"]):
         type = 'Pct'  to use the percentage of ratings
     """
 
-    def calcPct(df, nBins=5, dims = ["F1", "F2"], byVar="Member ID", labels = False):
+    if dims is None:
+        dims = ["F3", "F4"]
+
+    def calcPct(df, nBins=5, dims=None, byVar="Member ID", labels = False):
         """
         df=input
         nBins=5
@@ -251,6 +294,8 @@ def preProcessData(df, nBins=4, type='Norm', dims=["F3", "F4"]):
         xCol, yCol = dims
         labels = False
         """
+        if dims is None:
+            dims = ["F1", "F2"]
         xCol, yCol = dims
 
         xCuts=pa.cut(df[xCol], bins=nBins, retbins=True)[1]
@@ -272,7 +317,7 @@ def preProcessData(df, nBins=4, type='Norm', dims=["F3", "F4"]):
         pct = pct.fillna(value=0)
         return pct
 
-    def calcNorm(df, nBins=5, dims = ["F1", "F2"], byVar="Member ID", ofVar="Rating", labels = False):
+    def calcNorm(df, nBins=5, dims=None, byVar="Member ID", ofVar="Rating", labels = False):
         """
         df=input
         nBins=4
@@ -282,6 +327,8 @@ def preProcessData(df, nBins=4, type='Norm', dims=["F3", "F4"]):
         xCol, yCol = dims
         labels = False
         """
+        if dims is None:
+            dims = ["F1", "F2"]
         xCol, yCol = dims
     
         xCuts=pa.cut(df[xCol], bins=nBins, retbins=True)[1]
@@ -316,21 +363,25 @@ def preProcessData(df, nBins=4, type='Norm', dims=["F3", "F4"]):
 def plotCompare(dfX, nGrid=3, flag0=flag0, flag1=flag1):
     nn=nGrid
     p=0
+    i,j=(0,0)
     for i in range(nn):
         for j in range(nn):
             plt.subplot2grid((nn,nn*2),(i,j))
-            MyPlot.heatMap(dfX.loc[flag0[p]], show_legend=False, show_axisName = False, show_axisLbls = False, show=False, diverge=True)
+            MyPlot.heatMap(dfX.loc[flag0[p]].as_matrix(), show_legend=False, show_axisName = False, show_axisLbls = False, show=False, diverge=True)
             plt.subplot2grid((nn,nn*2),(i,j+nn))
-            MyPlot.heatMap(dfX.loc[flag1[p]], show_legend=False, show_axisName = False, show_axisLbls = False, show=False, diverge=True)
+            MyPlot.heatMap(dfX.loc[flag1[p]].as_matrix(), show_legend=False, show_axisName = False, show_axisLbls = False, show=False, diverge=True)
             p=p+1
     plt.show()
 
 # Plot individual member who does or doesn't like the film
-def plot1(mId, dfX, df=input, dims=["F3", "F4"], lbl="Title", highlight=None):
+def plot1(mId, dfX, df=input, dims=None, lbl="Title", highlight=None):
     """
         df  = Data for each member for each Title
         dfX = X values for modelling, summarised for each member over titles
     """
+
+    if dims is None:
+        dims = ["F3", "F4"]
 
     def plotTitle():
         tData = mData[mData["Title"]==highlight]
@@ -347,7 +398,7 @@ def plot1(mId, dfX, df=input, dims=["F3", "F4"], lbl="Title", highlight=None):
 
     # Heatmap of model input
     plt.subplot(1,2,2)
-    MyPlot.heatMap(dfX.loc[mId], show_legend=True, show=False, diverge=True)
+    MyPlot.heatMap(dfX.loc[mId].as_matrix(), show_legend=True, show=False, diverge=True)
 
     plt.suptitle(title)
     plt.show()

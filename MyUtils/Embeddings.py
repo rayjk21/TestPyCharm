@@ -100,6 +100,8 @@ class Embeddings():
         plt.subplot(1,2,2)
         MyPlot.heatPlot2Df(gpData, self.df, dims)
 
+        plt.title("{}:{} ({}s)".format(gpLbl, wantGp, self.itemLbl))
+
         plt.show()
 
 

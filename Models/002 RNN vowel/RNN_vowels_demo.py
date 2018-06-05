@@ -38,6 +38,7 @@ model8_2a_info = model_with({'name':"8_2a_next_char_2_20k",     'data_info':data
 model8_2b_info = model_with({'name':"8_2a_next_char_3_rand20k", 'data_info':data_info2b})
 model8_2c_info = model_with({'name':"8_2a_next_char_2_rand20k", 'data_info':data_info2c})
 
+
 # Build models with different parameters
 print(model8_2c_info)
 print(model8_2c_info['data_info'])
@@ -56,6 +57,7 @@ model9_info = model_with({'name':"9_demo", 'data_info':data_info1,
                            })
 
 
+m.build_model(model9_info, extract=True, create=False, fit=False)
 m.build_model(model9_info, extract=True, create=True, fit=True, epochs=50)
 
 
